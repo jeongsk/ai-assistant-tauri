@@ -1,4 +1,6 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+mod sidecar;
+
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -115,6 +117,8 @@ fn list_directory(path: &str) -> Result<Vec<String>, String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             greet,
             get_version,
@@ -122,7 +126,10 @@ pub fn run() {
             check_folder_access,
             read_file_content,
             write_file_content,
-            list_directory
+            list_directory,
+            sidecar::init_agent,
+            sidecar::agent_chat,
+            sidecar::shutdown_agent
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

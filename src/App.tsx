@@ -1,91 +1,60 @@
 import { useState } from 'react';
-import { Settings, MessageSquare, FolderOpen, Clock } from 'lucide-react';
+import { Settings, FolderOpen, Clock, Menu, X } from 'lucide-react';
 import { ChatView } from './components/chat/ChatView';
+import { ConversationList } from './components/chat/ConversationList';
 import { SettingsDialog } from './components/settings/SettingsDialog';
-import { useChatStore } from './stores/chatStore';
 import './App.css';
 
 function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [activeView, setActiveView] = useState<'chat' | 'files' | 'history'>('chat');
-  
-  const conversations = useChatStore((state) => state.conversations);
-  const createConversation = useChatStore((state) => state.createConversation);
-  const setActiveConversation = useChatStore((state) => state.setActiveConversation);
-  const activeConversationId = useChatStore((state) => state.activeConversationId);
-
-  const handleNewChat = () => {
-    createConversation();
-  };
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   return (
-    <div className="flex h-screen bg-gray-50 dark:bg-gray-950">
+    <div className="flex h-screen bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100">
       {/* Sidebar */}
-      <aside className="w-64 bg-white dark:bg-gray-900 border-r flex flex-col">
+      <aside
+        className={`${
+          sidebarOpen ? 'w-64' : 'w-0'
+        } bg-white dark:bg-gray-900 border-r transition-all duration-300 overflow-hidden flex flex-col`}
+      >
         {/* Logo */}
-        <div className="p-4 border-b">
-          <h1 className="text-xl font-bold">AI Assistant</h1>
-          <p className="text-xs text-gray-500">Tauri + React</p>
-        </div>
-
-        {/* New Chat Button */}
-        <div className="p-3">
+        <div className="p-4 border-b flex items-center justify-between">
+          <div>
+            <h1 className="text-lg font-bold">AI Assistant</h1>
+            <p className="text-xs text-gray-500">Tauri + React</p>
+          </div>
           <button
-            onClick={handleNewChat}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+            onClick={() => setSidebarOpen(false)}
+            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded lg:hidden"
           >
-            <MessageSquare className="w-4 h-4" />
-            New Chat
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Conversation List */}
-        <div className="flex-1 overflow-y-auto p-3">
-          <h2 className="text-xs font-semibold text-gray-500 uppercase mb-2">Recent</h2>
-          <div className="space-y-1">
-            {conversations.map((conv) => (
-              <button
-                key={conv.id}
-                onClick={() => setActiveConversation(conv.id)}
-                className={`w-full text-left px-3 py-2 rounded-lg text-sm truncate ${
-                  conv.id === activeConversationId
-                    ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
-                    : 'hover:bg-gray-100 dark:hover:bg-gray-800'
-                }`}
-              >
-                {conv.title}
-              </button>
-            ))}
-            {conversations.length === 0 && (
-              <p className="text-sm text-gray-400 px-3">No conversations yet</p>
-            )}
-          </div>
+        {/* Conversations */}
+        <div className="flex-1 overflow-hidden">
+          <ConversationList />
         </div>
 
         {/* Navigation */}
-        <nav className="p-3 border-t space-y-1">
-          <button
+        <nav className="p-2 border-t space-y-0.5">
+          <NavItem
+            icon={<FolderOpen className="w-4 h-4" />}
+            label="Files"
+            active={activeView === 'files'}
             onClick={() => setActiveView('files')}
-            className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${
-              activeView === 'files' ? 'bg-gray-100 dark:bg-gray-800' : 'hover:bg-gray-50 dark:hover:bg-gray-900'
-            }`}
-          >
-            <FolderOpen className="w-4 h-4" />
-            Files
-          </button>
-          <button
+          />
+          <NavItem
+            icon={<Clock className="w-4 h-4" />}
+            label="History"
+            active={activeView === 'history'}
             onClick={() => setActiveView('history')}
-            className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${
-              activeView === 'history' ? 'bg-gray-100 dark:bg-gray-800' : 'hover:bg-gray-50 dark:hover:bg-gray-900'
-            }`}
-          >
-            <Clock className="w-4 h-4" />
-            History
-          </button>
+          />
         </nav>
 
-        {/* Settings Button */}
-        <div className="p-3 border-t">
+        {/* Settings */}
+        <div className="p-2 border-t">
           <button
             onClick={() => setShowSettings(true)}
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-gray-100 dark:hover:bg-gray-800"
@@ -96,8 +65,18 @@ function App() {
         </div>
       </aside>
 
+      {/* Toggle sidebar button (when closed) */}
+      {!sidebarOpen && (
+        <button
+          onClick={() => setSidebarOpen(true)}
+          className="absolute top-4 left-4 p-2 bg-white dark:bg-gray-800 border rounded-lg shadow-sm hover:bg-gray-50 z-10"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+      )}
+
       {/* Main Content */}
-      <main className="flex-1 flex flex-col">
+      <main className="flex-1 flex flex-col overflow-hidden">
         {activeView === 'chat' && <ChatView />}
         {activeView === 'files' && <FilesView />}
         {activeView === 'history' && <HistoryView />}
@@ -106,6 +85,29 @@ function App() {
       {/* Settings Dialog */}
       <SettingsDialog isOpen={showSettings} onClose={() => setShowSettings(false)} />
     </div>
+  );
+}
+
+interface NavItemProps {
+  icon: React.ReactNode;
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}
+
+function NavItem({ icon, label, active, onClick }: NavItemProps) {
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
+        active
+          ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+          : 'hover:bg-gray-100 dark:hover:bg-gray-800'
+      }`}
+    >
+      {icon}
+      {label}
+    </button>
   );
 }
 

@@ -3,7 +3,8 @@
  * Manages communication with the agent runtime
  */
 
-import { useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { useChatStore } from '../stores/chatStore';
 import { useSettingsStore } from '../stores/settingsStore';
 
@@ -12,14 +13,36 @@ export interface AgentMessage {
   content: string;
 }
 
+interface ChatResponse {
+  content: string;
+  error?: string;
+}
+
 export function useAgent() {
+  const [initialized, setInitialized] = useState(false);
+  
   const activeConversationId = useChatStore((state) => state.activeConversationId);
   const addMessage = useChatStore((state) => state.addMessage);
-  const updateMessage = useChatStore((state) => state.updateMessage);
   const setStreaming = useChatStore((state) => state.setStreaming);
   
   const providers = useSettingsStore((state) => state.providers);
   const activeProvider = useSettingsStore((state) => state.activeProvider);
+
+  // Initialize agent on mount
+  useEffect(() => {
+    if (!initialized) {
+      invoke('init_agent')
+        .then(() => {
+          console.log('Agent initialized');
+          setInitialized(true);
+        })
+        .catch((err) => {
+          console.warn('Agent initialization failed (expected in dev):', err);
+          // Don't block - we'll use fallback
+          setInitialized(true);
+        });
+    }
+  }, [initialized]);
 
   const sendMessage = useCallback(async (content: string) => {
     if (!activeConversationId) return;
@@ -35,14 +58,32 @@ export function useAgent() {
     try {
       const providerConfig = providers[activeProvider];
       
-      // TODO: Call Agent Runtime via Tauri sidecar
-      // For now, return a placeholder
-      await simulateResponse(content, providerConfig);
-
-      addMessage(activeConversationId, {
-        role: 'assistant',
-        content: `Response from ${activeProvider}:\n\nThis is a placeholder. Connect the Agent Runtime to get real responses.\n\nYour message was: "${content.slice(0, 100)}..."`,
-      });
+      // Try to use agent runtime via Tauri
+      try {
+        const response: ChatResponse = await invoke('agent_chat', {
+          messages: [{ role: 'user', content }],
+          provider: activeProvider,
+        });
+        
+        if (response.error) {
+          throw new Error(response.error);
+        }
+        
+        addMessage(activeConversationId, {
+          role: 'assistant',
+          content: response.content,
+        });
+      } catch (tauriError) {
+        // Fallback: simulate response for development
+        console.warn('Tauri call failed, using fallback:', taurieError);
+        
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        
+        addMessage(activeConversationId, {
+          role: 'assistant',
+          content: generateFallbackResponse(content, activeProvider, providerConfig),
+        });
+      }
     } catch (error) {
       addMessage(activeConversationId, {
         role: 'assistant',
@@ -53,10 +94,28 @@ export function useAgent() {
     }
   }, [activeConversationId, addMessage, setStreaming, providers, activeProvider]);
 
-  return { sendMessage };
+  return { sendMessage, initialized };
 }
 
-// Simulate response for development
-async function simulateResponse(content: string, config: any): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 500 + Math.random() * 1000));
+// Fallback response generator for development
+function generateFallbackResponse(
+  userMessage: string,
+  provider: string,
+  config: any
+): string {
+  const model = config?.model || 'unknown';
+  
+  return `🔧 **Development Mode**
+
+The agent runtime is not connected. To enable full functionality:
+
+1. Build the agent-runtime: \`cd agent-runtime && npm run build\`
+2. Start Tauri in dev mode: \`npm run tauri dev\`
+
+**Your message:** "${userMessage.slice(0, 100)}${userMessage.length > 100 ? '...' : ''}"
+
+**Selected provider:** ${provider}
+**Model:** ${model}
+
+In production, this would be a real AI response!`;
 }
