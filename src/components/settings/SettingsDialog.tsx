@@ -3,8 +3,9 @@
  */
 
 import React, { useState } from 'react';
-import { Settings, X, Plus, Trash2, Eye, EyeOff } from 'lucide-react';
-import { useSettingsStore, ProviderConfig, FolderPermission } from '../stores/settingsStore';
+import { Settings, X, Plus, Trash2, Eye, EyeOff, Check, AlertCircle } from 'lucide-react';
+import { useSettingsStore, ProviderConfig, FolderPermission } from '../../stores/settingsStore';
+import { validateFolderPath } from '../../services/tauri';
 
 interface SettingsDialogProps {
   isOpen: boolean;
@@ -25,7 +26,7 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
             <Settings className="w-5 h-5" />
             <h2 className="text-lg font-semibold">Settings</h2>
           </div>
-          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded">
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -34,19 +35,19 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
         <div className="flex border-b">
           <button
             onClick={() => setActiveTab('providers')}
-            className={`px-4 py-2 ${activeTab === 'providers' ? 'border-b-2 border-blue-500 text-blue-500' : ''}`}
+            className={`px-4 py-2 text-sm ${activeTab === 'providers' ? 'border-b-2 border-blue-500 text-blue-500' : 'text-gray-600'}`}
           >
             Providers
           </button>
           <button
             onClick={() => setActiveTab('folders')}
-            className={`px-4 py-2 ${activeTab === 'folders' ? 'border-b-2 border-blue-500 text-blue-500' : ''}`}
+            className={`px-4 py-2 text-sm ${activeTab === 'folders' ? 'border-b-2 border-blue-500 text-blue-500' : 'text-gray-600'}`}
           >
             Folders
           </button>
           <button
             onClick={() => setActiveTab('appearance')}
-            className={`px-4 py-2 ${activeTab === 'appearance' ? 'border-b-2 border-blue-500 text-blue-500' : ''}`}
+            className={`px-4 py-2 text-sm ${activeTab === 'appearance' ? 'border-b-2 border-blue-500 text-blue-500' : 'text-gray-600'}`}
           >
             Appearance
           </button>
@@ -112,25 +113,26 @@ function ProviderCard({ id, config, isActive, onSelect, onUpdate }: ProviderCard
           />
           <span className="font-medium capitalize">{id}</span>
           {config.type === 'ollama' && (
-            <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded">Local</span>
+            <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 rounded">Local</span>
           )}
         </div>
+        {isActive && <Check className="w-4 h-4 text-blue-500" />}
       </div>
 
       {'apiKey' in config && config.type !== 'ollama' && (
         <div className="space-y-2">
-          <label className="block text-sm text-gray-600">API Key</label>
+          <label className="block text-sm text-gray-600 dark:text-gray-400">API Key</label>
           <div className="flex gap-2">
             <input
               type={showKey ? 'text' : 'password'}
               value={config.apiKey || ''}
               onChange={(e) => onUpdate({ apiKey: e.target.value })}
               placeholder={`Enter your ${id} API key`}
-              className="flex-1 px-3 py-2 border rounded text-sm"
+              className="flex-1 px-3 py-2 border rounded text-sm bg-white dark:bg-gray-800"
             />
             <button
               onClick={() => setShowKey(!showKey)}
-              className="p-2 hover:bg-gray-100 rounded"
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
             >
               {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
@@ -140,24 +142,24 @@ function ProviderCard({ id, config, isActive, onSelect, onUpdate }: ProviderCard
 
       {config.type === 'ollama' && (
         <div className="space-y-2">
-          <label className="block text-sm text-gray-600">Base URL</label>
+          <label className="block text-sm text-gray-600 dark:text-gray-400">Base URL</label>
           <input
             type="text"
             value={config.baseUrl || ''}
             onChange={(e) => onUpdate({ baseUrl: e.target.value })}
             placeholder="http://localhost:11434"
-            className="w-full px-3 py-2 border rounded text-sm"
+            className="w-full px-3 py-2 border rounded text-sm bg-white dark:bg-gray-800"
           />
         </div>
       )}
 
       <div className="space-y-2 mt-3">
-        <label className="block text-sm text-gray-600">Model</label>
+        <label className="block text-sm text-gray-600 dark:text-gray-400">Model</label>
         <input
           type="text"
           value={config.model}
           onChange={(e) => onUpdate({ model: e.target.value })}
-          className="w-full px-3 py-2 border rounded text-sm"
+          className="w-full px-3 py-2 border rounded text-sm bg-white dark:bg-gray-800"
         />
       </div>
     </div>
@@ -168,16 +170,40 @@ function FolderSettings() {
   const folderPermissions = useSettingsStore((state) => state.folderPermissions);
   const addFolderPermission = useSettingsStore((state) => state.addFolderPermission);
   const removeFolderPermission = useSettingsStore((state) => state.removeFolderPermission);
+  
+  const [newPath, setNewPath] = useState('');
+  const [newLevel, setNewLevel] = useState<'read' | 'readwrite'>('readwrite');
+  const [error, setError] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
 
   const handleAddFolder = async () => {
-    // TODO: Use Tauri dialog API to select folder
-    const path = prompt('Enter folder path:');
-    if (path) {
+    if (!newPath.trim()) return;
+    
+    setAdding(true);
+    setError(null);
+    
+    try {
+      // Validate path
+      await validateFolderPath(newPath.trim());
+      
+      // Check if already added
+      if (folderPermissions.some(p => p.path === newPath.trim())) {
+        setError('This folder is already added');
+        return;
+      }
+      
       addFolderPermission({
         id: crypto.randomUUID(),
-        path,
-        level: 'readwrite',
+        path: newPath.trim(),
+        level: newLevel,
       });
+      
+      setNewPath('');
+      setNewLevel('readwrite');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Invalid path');
+    } finally {
+      setAdding(false);
     }
   };
 
@@ -187,48 +213,77 @@ function FolderSettings() {
         Grant the AI access to specific folders on your computer.
       </p>
 
-      <button
-        onClick={handleAddFolder}
-        className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-      >
-        <Plus className="w-4 h-4" />
-        Add Folder
-      </button>
+      {/* Add folder form */}
+      <div className="p-3 border rounded-lg bg-gray-50 dark:bg-gray-800/50 space-y-3">
+        <div>
+          <label className="block text-sm font-medium mb-1">Folder Path</label>
+          <input
+            type="text"
+            value={newPath}
+            onChange={(e) => setNewPath(e.target.value)}
+            placeholder="/Users/username/Documents"
+            className="w-full px-3 py-2 border rounded text-sm bg-white dark:bg-gray-800"
+          />
+        </div>
+        
+        <div>
+          <label className="block text-sm font-medium mb-1">Permission Level</label>
+          <select
+            value={newLevel}
+            onChange={(e) => setNewLevel(e.target.value as 'read' | 'readwrite')}
+            className="w-full px-3 py-2 border rounded text-sm bg-white dark:bg-gray-800"
+          >
+            <option value="read">Read only</option>
+            <option value="readwrite">Read & Write</option>
+          </select>
+        </div>
+        
+        {error && (
+          <div className="flex items-center gap-2 text-sm text-red-500">
+            <AlertCircle className="w-4 h-4" />
+            {error}
+          </div>
+        )}
+        
+        <button
+          onClick={handleAddFolder}
+          disabled={!newPath.trim() || adding}
+          className="flex items-center justify-center gap-2 w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <Plus className="w-4 h-4" />
+          Add Folder
+        </button>
+      </div>
 
+      {/* Folder list */}
       {folderPermissions.length === 0 ? (
-        <p className="text-sm text-gray-400">No folders added yet.</p>
+        <p className="text-sm text-gray-400 text-center py-4">No folders added yet.</p>
       ) : (
         <div className="space-y-2">
+          <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400">Allowed Folders</h3>
           {folderPermissions.map((permission) => (
-            <FolderPermissionItem
+            <div
               key={permission.id}
-              permission={permission}
-              onRemove={() => removeFolderPermission(permission.id)}
-            />
+              className="flex items-center justify-between p-3 border rounded-lg"
+            >
+              <div className="flex-1 min-w-0">
+                <p className="font-mono text-sm truncate">{permission.path}</p>
+                <span className={`text-xs ${
+                  permission.level === 'read' ? 'text-yellow-600' : 'text-green-600'
+                }`}>
+                  {permission.level === 'read' ? '🔒 Read only' : '✏️ Read & Write'}
+                </span>
+              </div>
+              <button
+                onClick={() => removeFolderPermission(permission.id)}
+                className="p-2 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-red-500"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-interface FolderPermissionItemProps {
-  permission: FolderPermission;
-  onRemove: () => void;
-}
-
-function FolderPermissionItem({ permission, onRemove }: FolderPermissionItemProps) {
-  return (
-    <div className="flex items-center justify-between p-3 border rounded">
-      <div>
-        <p className="font-mono text-sm">{permission.path}</p>
-        <span className="text-xs text-gray-500">
-          {permission.level === 'read' ? 'Read only' : 'Read & Write'}
-        </span>
-      </div>
-      <button onClick={onRemove} className="p-2 hover:bg-red-100 rounded text-red-500">
-        <Trash2 className="w-4 h-4" />
-      </button>
     </div>
   );
 }
@@ -246,8 +301,8 @@ function AppearanceSettings() {
             <button
               key={t}
               onClick={() => setTheme(t)}
-              className={`px-4 py-2 rounded capitalize ${
-                theme === t ? 'bg-blue-500 text-white' : 'bg-gray-100 hover:bg-gray-200'
+              className={`px-4 py-2 rounded capitalize text-sm ${
+                theme === t ? 'bg-blue-500 text-white' : 'bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700'
               }`}
             >
               {t}

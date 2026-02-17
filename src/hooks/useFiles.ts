@@ -10,9 +10,13 @@ import {
   checkFolderAccess, 
   readFileContent, 
   writeFileContent, 
-  listDirectory,
-  FileEntry 
+  listDirectory
 } from '../services/tauri';
+
+export interface FileEntry {
+  name: string;
+  isDir: boolean;
+}
 
 export function useFiles() {
   const [currentPath, setCurrentPath] = useState<string>('');

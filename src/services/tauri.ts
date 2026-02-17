@@ -11,11 +11,6 @@ export interface FolderPermission {
   level: 'read' | 'readwrite';
 }
 
-export interface FileEntry {
-  name: string;
-  isDir: boolean;
-}
-
 /**
  * Get app version
  */
@@ -57,7 +52,7 @@ export async function writeFileContent(path: string, content: string): Promise<v
 /**
  * List directory contents
  */
-export async function listDirectory(path: string): Promise<FileEntry[]> {
+export async function listDirectory(path: string): Promise<Array<{ name: string; isDir: boolean }>> {
   const result: string[] = await invoke('list_directory', { path });
   return result.map((entry) => {
     const [name, type] = entry.split(':');

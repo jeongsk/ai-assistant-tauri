@@ -3,6 +3,7 @@ import { Settings, FolderOpen, Clock, Menu, X } from 'lucide-react';
 import { ChatView } from './components/chat/ChatView';
 import { ConversationList } from './components/chat/ConversationList';
 import { SettingsDialog } from './components/settings/SettingsDialog';
+import { FileExplorer } from './components/files/FileExplorer';
 import './App.css';
 
 function App() {
@@ -78,7 +79,7 @@ function App() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col overflow-hidden">
         {activeView === 'chat' && <ChatView />}
-        {activeView === 'files' && <FilesView />}
+        {activeView === 'files' && <FileExplorer />}
         {activeView === 'history' && <HistoryView />}
       </main>
 
@@ -111,19 +112,7 @@ function NavItem({ icon, label, active, onClick }: NavItemProps) {
   );
 }
 
-// Placeholder views
-function FilesView() {
-  return (
-    <div className="flex-1 flex items-center justify-center text-gray-500">
-      <div className="text-center">
-        <FolderOpen className="w-12 h-12 mx-auto mb-4 opacity-50" />
-        <h2 className="text-lg font-medium">File Explorer</h2>
-        <p className="text-sm">Add folders in Settings to get started</p>
-      </div>
-    </div>
-  );
-}
-
+// Placeholder view
 function HistoryView() {
   return (
     <div className="flex-1 flex items-center justify-center text-gray-500">
