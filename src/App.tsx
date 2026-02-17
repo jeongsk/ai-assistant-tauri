@@ -4,6 +4,7 @@ import { ChatView } from './components/chat/ChatView';
 import { ConversationList } from './components/chat/ConversationList';
 import { SettingsDialog } from './components/settings/SettingsDialog';
 import { FileExplorer } from './components/files/FileExplorer';
+import { TaskHistory } from './components/history/TaskHistory';
 import './App.css';
 
 function App() {
@@ -112,15 +113,11 @@ function NavItem({ icon, label, active, onClick }: NavItemProps) {
   );
 }
 
-// Placeholder view
+// Placeholder view for now - using TaskHistory component
 function HistoryView() {
   return (
-    <div className="flex-1 flex items-center justify-center text-gray-500">
-      <div className="text-center">
-        <Clock className="w-12 h-12 mx-auto mb-4 opacity-50" />
-        <h2 className="text-lg font-medium">Task History</h2>
-        <p className="text-sm">Your task history will appear here</p>
-      </div>
+    <div className="flex-1">
+      <TaskHistory />
     </div>
   );
 }
