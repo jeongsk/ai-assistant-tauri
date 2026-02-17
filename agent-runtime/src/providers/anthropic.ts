@@ -5,6 +5,14 @@
 import { BaseProvider, Message, ChatOptions, ChatResponse, ProviderConfig } from './base.js';
 import { logger } from '../utils/logger.js';
 
+interface AnthropicResponse {
+  content: Array<{ text?: string }>;
+  usage?: {
+    input_tokens: number;
+    output_tokens: number;
+  };
+}
+
 export class AnthropicProvider extends BaseProvider {
   private apiKey: string;
 
@@ -49,7 +57,7 @@ export class AnthropicProvider extends BaseProvider {
       throw new Error(`Anthropic API error: ${error}`);
     }
 
-    const data = await response.json();
+    const data = await response.json() as AnthropicResponse;
     
     return {
       content: data.content[0]?.text || '',
@@ -110,7 +118,7 @@ export class AnthropicProvider extends BaseProvider {
       for (const line of lines) {
         if (line.startsWith('data: ')) {
           try {
-            const data = JSON.parse(line.slice(6));
+            const data = JSON.parse(line.slice(6)) as { type?: string; delta?: { text?: string } };
             if (data.type === 'content_block_delta' && data.delta?.text) {
               yield data.delta.text;
             }

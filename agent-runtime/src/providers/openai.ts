@@ -5,6 +5,25 @@
 import { BaseProvider, Message, ChatOptions, ChatResponse, ProviderConfig } from './base.js';
 import { logger } from '../utils/logger.js';
 
+interface OpenAIResponse {
+  choices?: Array<{
+    message?: {
+      content?: string;
+      tool_calls?: any[];
+    };
+  }>;
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+  };
+}
+
+interface OpenAIStreamChoice {
+  delta?: {
+    content?: string;
+  };
+}
+
 export class OpenAIProvider extends BaseProvider {
   private apiKey: string;
   private baseUrl: string;
@@ -45,7 +64,7 @@ export class OpenAIProvider extends BaseProvider {
       throw new Error(`OpenAI API error: ${error}`);
     }
 
-    const data = await response.json();
+    const data = await response.json() as OpenAIResponse;
     const choice = data.choices?.[0];
 
     return {
@@ -106,7 +125,7 @@ export class OpenAIProvider extends BaseProvider {
           if (data === '[DONE]') continue;
           
           try {
-            const parsed = JSON.parse(data);
+            const parsed = JSON.parse(data) as { choices?: OpenAIStreamChoice[] };
             const content = parsed.choices?.[0]?.delta?.content;
             if (content) {
               yield content;

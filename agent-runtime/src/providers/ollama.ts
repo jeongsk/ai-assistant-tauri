@@ -5,6 +5,23 @@
 import { BaseProvider, Message, ChatOptions, ChatResponse, ProviderConfig } from './base.js';
 import { logger } from '../utils/logger.js';
 
+interface OllamaResponse {
+  message?: {
+    content: string;
+  };
+  prompt_eval_count?: number;
+  eval_count?: number;
+  done?: boolean;
+}
+
+interface OllamaModel {
+  name: string;
+}
+
+interface OllamaTagsResponse {
+  models?: OllamaModel[];
+}
+
 export class OllamaProvider extends BaseProvider {
   private baseUrl: string;
 
@@ -44,7 +61,7 @@ export class OllamaProvider extends BaseProvider {
       throw new Error(`Ollama API error: ${error}`);
     }
 
-    const data = await response.json();
+    const data = await response.json() as OllamaResponse;
 
     return {
       content: data.message?.content || '',
@@ -98,7 +115,7 @@ export class OllamaProvider extends BaseProvider {
         if (!line.trim()) continue;
         
         try {
-          const data = JSON.parse(line);
+          const data = JSON.parse(line) as OllamaResponse;
           if (data.message?.content) {
             yield data.message.content;
           }
@@ -122,8 +139,8 @@ export class OllamaProvider extends BaseProvider {
       throw new Error('Failed to fetch Ollama models');
     }
 
-    const data = await response.json();
-    return data.models?.map((m: any) => m.name) || [];
+    const data = await response.json() as OllamaTagsResponse;
+    return data.models?.map((m) => m.name) || [];
   }
 
   /**
