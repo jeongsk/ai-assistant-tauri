@@ -4,7 +4,8 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Loader2, Trash2 } from 'lucide-react';
-import { useChatStore, useMessages, useActiveConversation } from '../stores/chatStore';
+import { useChatStore, useMessages, useActiveConversation } from '../../stores/chatStore';
+import { useAgent } from '../../hooks/useAgent';
 
 export function ChatView() {
   const [input, setInput] = useState('');
@@ -14,10 +15,10 @@ export function ChatView() {
   const conversation = useActiveConversation();
   const isStreaming = useChatStore((state) => state.isStreaming);
   const createConversation = useChatStore((state) => state.createConversation);
-  const addMessage = useChatStore((state) => state.addMessage);
-  const setStreaming = useChatStore((state) => state.setStreaming);
   const clearMessages = useChatStore((state) => state.clearMessages);
   const activeConversationId = useChatStore((state) => state.activeConversationId);
+  
+  const { sendMessage } = useAgent();
 
   // Auto scroll to bottom
   useEffect(() => {
@@ -33,36 +34,11 @@ export function ChatView() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || isStreaming || !activeConversationId) return;
+    if (!input.trim() || isStreaming) return;
 
     const userMessage = input.trim();
     setInput('');
-
-    // Add user message
-    addMessage(activeConversationId, {
-      role: 'user',
-      content: userMessage,
-    });
-
-    setStreaming(true);
-
-    try {
-      // TODO: Call Tauri backend
-      // For now, simulate response
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      
-      addMessage(activeConversationId, {
-        role: 'assistant',
-        content: 'This is a placeholder response. Connect to the backend to get real responses.',
-      });
-    } catch (error) {
-      addMessage(activeConversationId, {
-        role: 'assistant',
-        content: `Error: ${error}`,
-      });
-    } finally {
-      setStreaming(false);
-    }
+    await sendMessage(userMessage);
   };
 
   const handleClear = () => {
