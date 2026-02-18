@@ -1,0 +1,28 @@
+#!/bin/bash
+# Agent Runtime Sidecar Wrapper
+# This script locates and executes the agent-runtime Node.js process
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+AGENT_RUNTIME_DIR="$SCRIPT_DIR/../../agent-runtime"
+
+# Check if agent-runtime exists
+if [ ! -d "$AGENT_RUNTIME_DIR" ]; then
+    echo "Error: agent-runtime directory not found at $AGENT_RUNTIME_DIR" >&2
+    exit 1
+fi
+
+# Check if node_modules exists
+if [ ! -d "$AGENT_RUNTIME_DIR/node_modules" ]; then
+    echo "Error: agent-runtime dependencies not installed. Run 'cd $AGENT_RUNTIME_DIR && npm install'" >&2
+    exit 1
+fi
+
+# Check if dist/index.js exists
+if [ ! -f "$AGENT_RUNTIME_DIR/dist/index.js" ]; then
+    echo "Error: agent-runtime not built. Run 'cd $AGENT_RUNTIME_DIR && npm run build'" >&2
+    exit 1
+fi
+
+# Execute agent-runtime with node
+cd "$AGENT_RUNTIME_DIR" || exit 1
+exec node dist/index.js "$@"

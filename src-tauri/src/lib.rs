@@ -1,8 +1,10 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+mod db;
 mod sidecar;
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use tauri::Manager;
 
 /// Message structure
 #[derive(Debug, Serialize, Deserialize)]
@@ -119,6 +121,18 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
+        .setup(|app| {
+            // Initialize database
+            let db_state = db::DbState::new(app.handle())
+                .expect("Failed to initialize database");
+            app.manage(db_state);
+
+            // Initialize sidecar state
+            let sidecar_state = std::sync::Mutex::new(sidecar::SidecarState::new());
+            app.manage(sidecar_state);
+
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             greet,
             get_version,
@@ -129,7 +143,19 @@ pub fn run() {
             list_directory,
             sidecar::init_agent,
             sidecar::agent_chat,
-            sidecar::shutdown_agent
+            sidecar::get_tools,
+            sidecar::configure_providers,
+            sidecar::shutdown_agent,
+            // Database commands
+            db::load_conversations,
+            db::save_conversation,
+            db::delete_conversation,
+            db::load_messages,
+            db::save_message,
+            db::load_folder_permissions,
+            db::add_folder_permission,
+            db::remove_folder_permission,
+            db::update_folder_permission
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
