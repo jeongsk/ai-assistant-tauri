@@ -12,12 +12,14 @@ import {
   EyeOff,
   Check,
   AlertCircle,
+  Globe,
 } from "lucide-react";
 import {
   useSettingsStore,
   ProviderConfig,
   FolderPermission,
 } from "../../stores/settingsStore";
+import { useBrowserStore } from "../../stores/browserStore";
 import { validateFolderPath } from "../../services/tauri";
 
 interface SettingsDialogProps {
@@ -27,7 +29,7 @@ interface SettingsDialogProps {
 
 export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
   const [activeTab, setActiveTab] = useState<
-    "providers" | "folders" | "appearance"
+    "providers" | "folders" | "browser" | "appearance"
   >("providers");
 
   if (!isOpen) return null;
@@ -69,12 +71,20 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
           >
             Appearance
           </button>
+          <button
+            onClick={() => setActiveTab("browser")}
+            className={`px-4 py-2 text-sm flex items-center gap-1 ${activeTab === "browser" ? "border-b-2 border-blue-500 text-blue-500" : "text-gray-600"}`}
+          >
+            <Globe className="w-4 h-4" />
+            Browser
+          </button>
         </div>
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
           {activeTab === "providers" && <ProviderSettings />}
           {activeTab === "folders" && <FolderSettings />}
+          {activeTab === "browser" && <BrowserSettings />}
           {activeTab === "appearance" && <AppearanceSettings />}
         </div>
       </div>
@@ -390,6 +400,187 @@ function AppearanceSettings() {
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+function BrowserSettings() {
+  const { settings, updateSettings, resetSettings } = useBrowserStore();
+
+  const handleToggle = (key: "enabled" | "headless") => {
+    updateSettings({ [key]: !settings[key] });
+  };
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-gray-500 mb-4">
+        Configure browser automation for web navigation and interactions.
+      </p>
+
+      {/* Enable Browser */}
+      <div className="flex items-center justify-between p-3 border rounded-lg">
+        <div>
+          <p className="font-medium">Enable Browser Automation</p>
+          <p className="text-sm text-gray-500">
+            Allow agent to control web browser
+          </p>
+        </div>
+        <button
+          onClick={() => handleToggle("enabled")}
+          className={`w-12 h-6 rounded-full transition-colors ${
+            settings.enabled ? "bg-blue-500" : "bg-gray-300"
+          }`}
+        >
+          <div
+            className={`w-5 h-5 bg-white rounded-full shadow transform transition-transform ${
+              settings.enabled ? "translate-x-6" : "translate-x-0.5"
+            }`}
+          />
+        </button>
+      </div>
+
+      {/* Headless Mode */}
+      <div className="flex items-center justify-between p-3 border rounded-lg">
+        <div>
+          <p className="font-medium">Headless Mode</p>
+          <p className="text-sm text-gray-500">
+            Run browser without visible window
+          </p>
+        </div>
+        <button
+          onClick={() => handleToggle("headless")}
+          disabled={!settings.enabled}
+          className={`w-12 h-6 rounded-full transition-colors ${
+            settings.headless ? "bg-blue-500" : "bg-gray-300"
+          } disabled:opacity-50`}
+        >
+          <div
+            className={`w-5 h-5 bg-white rounded-full shadow transform transition-transform ${
+              settings.headless ? "translate-x-6" : "translate-x-0.5"
+            }`}
+          />
+        </button>
+      </div>
+
+      {/* Viewport Size */}
+      <div className="p-3 border rounded-lg space-y-3">
+        <p className="font-medium">Viewport Size</p>
+        <div className="flex gap-4 items-center">
+          <div>
+            <label className="text-sm text-gray-500">Width</label>
+            <input
+              type="number"
+              value={settings.defaultViewport.width}
+              onChange={(e) =>
+                updateSettings({
+                  defaultViewport: {
+                    ...settings.defaultViewport,
+                    width: parseInt(e.target.value) || 1280,
+                  },
+                })
+              }
+              disabled={!settings.enabled}
+              className="w-24 px-2 py-1 border rounded text-sm bg-white dark:bg-gray-800"
+            />
+          </div>
+          <span className="text-gray-400">×</span>
+          <div>
+            <label className="text-sm text-gray-500">Height</label>
+            <input
+              type="number"
+              value={settings.defaultViewport.height}
+              onChange={(e) =>
+                updateSettings({
+                  defaultViewport: {
+                    ...settings.defaultViewport,
+                    height: parseInt(e.target.value) || 720,
+                  },
+                })
+              }
+              disabled={!settings.enabled}
+              className="w-24 px-2 py-1 border rounded text-sm bg-white dark:bg-gray-800"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Rate Limiting */}
+      <div className="p-3 border rounded-lg space-y-3">
+        <p className="font-medium">Rate Limiting</p>
+        <div className="flex gap-4 items-center">
+          <div>
+            <label className="text-sm text-gray-500">Max Actions</label>
+            <input
+              type="number"
+              value={settings.rateLimit.maxActions}
+              onChange={(e) =>
+                updateSettings({
+                  rateLimit: {
+                    ...settings.rateLimit,
+                    maxActions: parseInt(e.target.value) || 100,
+                  },
+                })
+              }
+              disabled={!settings.enabled}
+              className="w-24 px-2 py-1 border rounded text-sm bg-white dark:bg-gray-800"
+            />
+          </div>
+          <span className="text-gray-500 text-sm">per</span>
+          <div>
+            <label className="text-sm text-gray-500">Window (ms)</label>
+            <input
+              type="number"
+              value={settings.rateLimit.windowMs}
+              onChange={(e) =>
+                updateSettings({
+                  rateLimit: {
+                    ...settings.rateLimit,
+                    windowMs: parseInt(e.target.value) || 60000,
+                  },
+                })
+              }
+              disabled={!settings.enabled}
+              className="w-24 px-2 py-1 border rounded text-sm bg-white dark:bg-gray-800"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Available Tools */}
+      <div className="p-3 border rounded-lg space-y-3">
+        <p className="font-medium">Available Tools</p>
+        <div className="flex flex-wrap gap-2">
+          {[
+            "navigate",
+            "screenshot",
+            "click",
+            "type",
+            "extract_dom",
+            "scroll",
+            "wait",
+            "close",
+          ].map((tool) => (
+            <span
+              key={tool}
+              className={`px-2 py-1 text-xs rounded border ${
+                settings.enabled
+                  ? "border-blue-300 text-blue-600 bg-blue-50 dark:bg-blue-900/20"
+                  : "border-gray-300 text-gray-400"
+              }`}
+            >
+              {tool}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* Reset Button */}
+      <button
+        onClick={resetSettings}
+        className="w-full px-4 py-2 text-sm text-red-500 border border-red-300 rounded hover:bg-red-50 dark:hover:bg-red-900/20"
+      >
+        Reset to Defaults
+      </button>
     </div>
   );
 }
