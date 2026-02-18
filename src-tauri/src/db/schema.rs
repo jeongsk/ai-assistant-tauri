@@ -3,7 +3,7 @@
 use rusqlite::Connection;
 use rusqlite::Result;
 
-const _SCHEMA_VERSION: i32 = 3;
+const _SCHEMA_VERSION: i32 = 4;
 
 pub fn run_migrations(conn: &Connection) -> Result<()> {
     // Create migrations table if not exists
@@ -35,6 +35,10 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
 
     if current_version < 3 {
         migrate_v3(conn)?;
+    }
+
+    if current_version < 4 {
+        migrate_v4(conn)?;
     }
 
     Ok(())
@@ -211,6 +215,94 @@ fn migrate_v3(conn: &Connection) -> Result<()> {
 
         -- Record migration
         INSERT INTO schema_migrations (version) VALUES (3);
+        "#,
+    )?;
+
+    Ok(())
+}
+
+fn migrate_v4(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        r#"
+        -- Memory tables
+        CREATE TABLE IF NOT EXISTS memories (
+            id TEXT PRIMARY KEY,
+            type TEXT NOT NULL CHECK(type IN ('episodic', 'semantic', 'procedural')),
+            content TEXT NOT NULL,
+            embedding BLOB,
+            metadata TEXT,
+            importance REAL DEFAULT 0.5,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            last_accessed TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS user_patterns (
+            id TEXT PRIMARY KEY,
+            pattern_type TEXT NOT NULL,
+            pattern_data TEXT NOT NULL,
+            confidence REAL DEFAULT 0.0,
+            sample_count INTEGER DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        -- Plugin table
+        CREATE TABLE IF NOT EXISTS plugins (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            version TEXT NOT NULL,
+            manifest TEXT NOT NULL,
+            permissions TEXT NOT NULL DEFAULT '[]',
+            enabled INTEGER NOT NULL DEFAULT 0,
+            installed_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        -- Collaboration tables
+        CREATE TABLE IF NOT EXISTS templates (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            category TEXT NOT NULL DEFAULT 'general',
+            content TEXT NOT NULL,
+            visibility TEXT NOT NULL DEFAULT 'private' CHECK(visibility IN ('private', 'public', 'team')),
+            version TEXT NOT NULL DEFAULT '1.0.0',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS shared_workflows (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT,
+            steps TEXT NOT NULL,
+            owner_id TEXT,
+            visibility TEXT NOT NULL DEFAULT 'private',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        -- Voice settings
+        CREATE TABLE IF NOT EXISTS voice_settings (
+            id TEXT PRIMARY KEY,
+            enabled INTEGER NOT NULL DEFAULT 0,
+            stt_model TEXT NOT NULL DEFAULT 'base',
+            tts_voice TEXT NOT NULL DEFAULT 'default',
+            language TEXT NOT NULL DEFAULT 'en',
+            wake_word TEXT,
+            vad_sensitivity REAL DEFAULT 0.5,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        -- Indexes
+        CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(type);
+        CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance);
+        CREATE INDEX IF NOT EXISTS idx_user_patterns_type ON user_patterns(pattern_type);
+        CREATE INDEX IF NOT EXISTS idx_plugins_name ON plugins(name);
+        CREATE INDEX IF NOT EXISTS idx_templates_category ON templates(category);
+        CREATE INDEX IF NOT EXISTS idx_templates_visibility ON templates(visibility);
+
+        -- Record migration
+        INSERT INTO schema_migrations (version) VALUES (4);
         "#,
     )?;
 

@@ -1,6 +1,9 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 mod db;
 mod sidecar;
+mod voice;
+mod plugins;
+mod collaboration;
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;

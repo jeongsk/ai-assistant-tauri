@@ -2,30 +2,31 @@
  * Memory Manager - Context and conversation memory
  */
 
-import { logger } from '../utils/logger.js';
-import { Message } from '../providers/base.js';
+import { logger } from "../utils/logger.js";
+import { Message } from "../providers/base.js";
 
-export interface MemoryConfig {
+// Local config for short-term memory (separate from long-term MemoryConfig in types.ts)
+export interface ShortTermMemoryConfig {
   maxMessages: number;
   maxTokens: number;
 }
 
 export class MemoryManager {
   private shortTermMemory: Message[] = [];
-  private config: MemoryConfig;
+  private config: ShortTermMemoryConfig;
   private memoryPath: string | null = null;
 
-  constructor(config?: Partial<MemoryConfig>) {
+  constructor(config?: Partial<ShortTermMemoryConfig>) {
     this.config = {
       maxMessages: config?.maxMessages || 50,
       maxTokens: config?.maxTokens || 128000,
     };
-    logger.info('MemoryManager initialized', this.config);
+    logger.info("MemoryManager initialized", this.config);
   }
 
   async initialize(memoryPath?: string): Promise<void> {
     this.memoryPath = memoryPath || null;
-    logger.debug('Memory initialized', { path: memoryPath });
+    logger.debug("Memory initialized", { path: memoryPath });
   }
 
   /**
@@ -38,13 +39,16 @@ export class MemoryManager {
   /**
    * Add messages to memory
    */
-  async addMessages(messages: Message[], response?: { content: string }): Promise<void> {
+  async addMessages(
+    messages: Message[],
+    response?: { content: string },
+  ): Promise<void> {
     // Add user/assistant messages
     this.shortTermMemory.push(...messages);
 
     if (response) {
       this.shortTermMemory.push({
-        role: 'assistant',
+        role: "assistant",
         content: response.content,
       });
     }
@@ -64,7 +68,7 @@ export class MemoryManager {
    */
   async clear(): Promise<void> {
     this.shortTermMemory = [];
-    logger.info('Memory cleared');
+    logger.info("Memory cleared");
   }
 
   /**
@@ -97,6 +101,6 @@ export class MemoryManager {
    */
   async close(): Promise<void> {
     // TODO: Persist to file if memoryPath is set
-    logger.info('Memory manager closed');
+    logger.info("Memory manager closed");
   }
 }
