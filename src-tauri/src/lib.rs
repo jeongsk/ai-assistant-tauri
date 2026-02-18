@@ -155,7 +155,23 @@ pub fn run() {
             db::load_folder_permissions,
             db::add_folder_permission,
             db::remove_folder_permission,
-            db::update_folder_permission
+            db::update_folder_permission,
+            // Skill commands
+            db::list_skills,
+            db::get_skill,
+            db::create_skill,
+            db::update_skill,
+            db::delete_skill,
+            db::search_skills,
+            // Recipe commands
+            db::list_recipes,
+            db::get_recipe,
+            db::create_recipe,
+            db::update_recipe,
+            db::delete_recipe,
+            db::create_recipe_execution,
+            db::update_recipe_execution,
+            db::list_recipe_executions
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

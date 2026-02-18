@@ -253,3 +253,427 @@ pub fn update_folder_permission(
 
     Ok(())
 }
+
+// ============================================================================
+// Skill Model and Commands
+// ============================================================================
+
+/// Skill model
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct Skill {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub prompt: String,
+    pub tools: String, // JSON array
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[tauri::command]
+pub fn list_skills(db: tauri::State<'_, DbState>) -> Result<Vec<Skill>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+
+    let mut stmt = conn
+        .prepare("SELECT id, name, description, prompt, tools, created_at, updated_at FROM skills ORDER BY name")
+        .map_err(|e| e.to_string())?;
+
+    let skills = stmt
+        .query_map([], |row| {
+            Ok(Skill {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                prompt: row.get(3)?,
+                tools: row.get(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(skills)
+}
+
+#[tauri::command]
+pub fn get_skill(db: tauri::State<'_, DbState>, id: String) -> Result<Skill, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+
+    let skill = conn
+        .query_row(
+            "SELECT id, name, description, prompt, tools, created_at, updated_at FROM skills WHERE id = ?1",
+            [&id],
+            |row| {
+                Ok(Skill {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    prompt: row.get(3)?,
+                    tools: row.get(4)?,
+                    created_at: row.get(5)?,
+                    updated_at: row.get(6)?,
+                })
+            },
+        )
+        .map_err(|e| e.to_string())?;
+
+    Ok(skill)
+}
+
+#[tauri::command]
+pub fn create_skill(
+    db: tauri::State<'_, DbState>,
+    id: String,
+    name: String,
+    description: String,
+    prompt: String,
+    tools: String,
+) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+
+    // Validate limits
+    if description.len() > 500 {
+        return Err("Description must be 500 characters or less".to_string());
+    }
+    if prompt.len() > 10240 {
+        return Err("Prompt must be 10KB or less".to_string());
+    }
+
+    // Check skill count limit
+    let count: i32 = conn
+        .query_row("SELECT COUNT(*) FROM skills", [], |row| row.get(0))
+        .map_err(|e| e.to_string())?;
+
+    if count >= 100 {
+        return Err("Maximum skill limit (100) reached".to_string());
+    }
+
+    let now = chrono::Utc::now().to_rfc3339();
+
+    conn.execute(
+        "INSERT INTO skills (id, name, description, prompt, tools, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        [&id, &name, &description, &prompt, &tools, &now, &now],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn update_skill(
+    db: tauri::State<'_, DbState>,
+    id: String,
+    name: String,
+    description: String,
+    prompt: String,
+    tools: String,
+) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+
+    // Validate limits
+    if description.len() > 500 {
+        return Err("Description must be 500 characters or less".to_string());
+    }
+    if prompt.len() > 10240 {
+        return Err("Prompt must be 10KB or less".to_string());
+    }
+
+    let now = chrono::Utc::now().to_rfc3339();
+
+    conn.execute(
+        "UPDATE skills SET name = ?1, description = ?2, prompt = ?3, tools = ?4, updated_at = ?5 WHERE id = ?6",
+        [&name, &description, &prompt, &tools, &now, &id],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_skill(db: tauri::State<'_, DbState>, id: String) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+
+    conn.execute("DELETE FROM skills WHERE id = ?1", [&id])
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn search_skills(
+    db: tauri::State<'_, DbState>,
+    query: String,
+) -> Result<Vec<Skill>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+
+    let pattern = format!("%{}%", query);
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, name, description, prompt, tools, created_at, updated_at
+             FROM skills WHERE name LIKE ?1 OR description LIKE ?1 ORDER BY name",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let skills = stmt
+        .query_map([&pattern], |row| {
+            Ok(Skill {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                prompt: row.get(3)?,
+                tools: row.get(4)?,
+                created_at: row.get(5)?,
+                updated_at: row.get(6)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(skills)
+}
+
+// ============================================================================
+// Recipe Model and Commands
+// ============================================================================
+
+/// Recipe model
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct Recipe {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub version: String,
+    pub steps: String, // JSON array
+    pub variables: Option<String>, // JSON object
+    pub is_builtin: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// Recipe execution model
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct RecipeExecution {
+    pub id: String,
+    pub recipe_id: String,
+    pub status: String,
+    pub variables: Option<String>,
+    pub result: Option<String>,
+    pub error: Option<String>,
+    pub started_at: String,
+    pub completed_at: Option<String>,
+}
+
+#[tauri::command]
+pub fn list_recipes(db: tauri::State<'_, DbState>) -> Result<Vec<Recipe>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, name, description, version, steps, variables, is_builtin, created_at, updated_at
+             FROM recipes ORDER BY is_builtin, name",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let recipes = stmt
+        .query_map([], |row| {
+            Ok(Recipe {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                version: row.get(3)?,
+                steps: row.get(4)?,
+                variables: row.get(5)?,
+                is_builtin: row.get::<_, i32>(6)? != 0,
+                created_at: row.get(7)?,
+                updated_at: row.get(8)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(recipes)
+}
+
+#[tauri::command]
+pub fn get_recipe(db: tauri::State<'_, DbState>, id: String) -> Result<Recipe, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+
+    let recipe = conn
+        .query_row(
+            "SELECT id, name, description, version, steps, variables, is_builtin, created_at, updated_at
+             FROM recipes WHERE id = ?1",
+            [&id],
+            |row| {
+                Ok(Recipe {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    version: row.get(3)?,
+                    steps: row.get(4)?,
+                    variables: row.get(5)?,
+                    is_builtin: row.get::<_, i32>(6)? != 0,
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8)?,
+                })
+            },
+        )
+        .map_err(|e| e.to_string())?;
+
+    Ok(recipe)
+}
+
+#[tauri::command]
+pub fn create_recipe(
+    db: tauri::State<'_, DbState>,
+    id: String,
+    name: String,
+    description: Option<String>,
+    version: String,
+    steps: String,
+    variables: Option<String>,
+) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+
+    conn.execute(
+        "INSERT INTO recipes (id, name, description, version, steps, variables, is_builtin, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7, ?8)",
+        [&id, &name, &description.unwrap_or_default(), &version, &steps, &variables.unwrap_or_default(), &now, &now],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn update_recipe(
+    db: tauri::State<'_, DbState>,
+    id: String,
+    name: String,
+    description: Option<String>,
+    version: String,
+    steps: String,
+    variables: Option<String>,
+) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+
+    conn.execute(
+        "UPDATE recipes SET name = ?1, description = ?2, version = ?3, steps = ?4, variables = ?5, updated_at = ?6 WHERE id = ?7",
+        [&name, &description.unwrap_or_default(), &version, &steps, &variables.unwrap_or_default(), &now, &id],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_recipe(db: tauri::State<'_, DbState>, id: String) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+
+    // Check if builtin
+    let is_builtin: bool = conn
+        .query_row("SELECT is_builtin FROM recipes WHERE id = ?1", [&id], |row| {
+            Ok(row.get::<_, i32>(0)? != 0)
+        })
+        .map_err(|e| e.to_string())?;
+
+    if is_builtin {
+        return Err("Cannot delete built-in recipes".to_string());
+    }
+
+    conn.execute("DELETE FROM recipes WHERE id = ?1", [&id])
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn create_recipe_execution(
+    db: tauri::State<'_, DbState>,
+    id: String,
+    recipe_id: String,
+    variables: Option<String>,
+) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+
+    conn.execute(
+        "INSERT INTO recipe_executions (id, recipe_id, status, variables, started_at)
+         VALUES (?1, ?2, 'running', ?3, ?4)",
+        [&id, &recipe_id, &variables.unwrap_or_default(), &now],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn update_recipe_execution(
+    db: tauri::State<'_, DbState>,
+    id: String,
+    status: String,
+    result: Option<String>,
+    error: Option<String>,
+) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+
+    conn.execute(
+        "UPDATE recipe_executions SET status = ?1, result = ?2, error = ?3, completed_at = ?4 WHERE id = ?5",
+        [&status, &result.unwrap_or_default(), &error.unwrap_or_default(), &now, &id],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn list_recipe_executions(
+    db: tauri::State<'_, DbState>,
+    recipe_id: Option<String>,
+) -> Result<Vec<RecipeExecution>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+
+    let sql = match &recipe_id {
+        Some(_) => "SELECT id, recipe_id, status, variables, result, error, started_at, completed_at
+                     FROM recipe_executions WHERE recipe_id = ?1 ORDER BY started_at DESC",
+        None => "SELECT id, recipe_id, status, variables, result, error, started_at, completed_at
+                 FROM recipe_executions ORDER BY started_at DESC",
+    };
+
+    let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+
+    let map_row = |row: &rusqlite::Row| {
+        Ok(RecipeExecution {
+            id: row.get(0)?,
+            recipe_id: row.get(1)?,
+            status: row.get(2)?,
+            variables: row.get(3)?,
+            result: row.get(4)?,
+            error: row.get(5)?,
+            started_at: row.get(6)?,
+            completed_at: row.get(7)?,
+        })
+    };
+
+    let executions = match &recipe_id {
+        Some(rid) => stmt.query_map([&rid], map_row),
+        None => stmt.query_map([], map_row),
+    }
+    .map_err(|e| e.to_string())?
+    .collect::<Result<Vec<_>, _>>()
+    .map_err(|e| e.to_string())?;
+
+    Ok(executions)
+}
