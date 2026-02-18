@@ -26,7 +26,7 @@ export interface BrowserTool {
     type: 'object';
     properties: Record<string, unknown>;
     required?: string[];
-  };
+  } & Omit<import('./types.js').ToolInputSchema, 'properties'>;
 }
 
 // Browser tools configuration
