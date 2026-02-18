@@ -39,11 +39,22 @@ pub(crate) struct SidecarProcess {
 impl SidecarProcess {
     fn spawn() -> Result<Self, String> {
         // Find the agent-runtime binary
-        let bin_path = std::env::current_exe()
-            .map_err(|e| format!("Failed to get exe path: {}", e))?
+        // In development: target/debug/agent-runtime
+        // In production: app bundle binaries folder
+        let exe_path = std::env::current_exe()
+            .map_err(|e| format!("Failed to get exe path: {}", e))?;
+
+        let bin_path = exe_path
             .parent()
-            .and_then(|p| p.parent())
-            .map(|p| p.join("binaries").join("agent-runtime"))
+            .map(|p| p.join("agent-runtime"))
+            .filter(|p| p.exists())
+            .or_else(|| {
+                // Try parent/binaries for production build
+                exe_path
+                    .parent()
+                    .and_then(|p| p.parent())
+                    .map(|p| p.join("binaries").join("agent-runtime"))
+            })
             .ok_or_else(|| "Failed to determine binaries path".to_string())?;
 
         if !bin_path.exists() {

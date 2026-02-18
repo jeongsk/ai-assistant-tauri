@@ -192,3 +192,56 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_greet() {
+        let result = greet("World");
+        assert_eq!(result, "Hello, World! You've been greeted from Rust!");
+    }
+
+    #[test]
+    fn test_get_version() {
+        let version = get_version();
+        assert_eq!(version, env!("CARGO_PKG_VERSION"));
+    }
+
+    #[test]
+    fn test_message_serialization() {
+        let message = Message {
+            role: "user".to_string(),
+            content: "Hello".to_string(),
+        };
+        let json = serde_json::to_string(&message).unwrap();
+        assert!(json.contains("user"));
+        assert!(json.contains("Hello"));
+    }
+
+    #[test]
+    fn test_chat_request_serialization() {
+        let request = ChatRequest {
+            messages: vec![Message {
+                role: "user".to_string(),
+                content: "Test".to_string(),
+            }],
+            provider: Some("openai".to_string()),
+        };
+        let json = serde_json::to_string(&request).unwrap();
+        assert!(json.contains("openai"));
+    }
+
+    #[test]
+    fn test_folder_permission() {
+        let perm = FolderPermission {
+            id: "1".to_string(),
+            path: "/test/path".to_string(),
+            level: "read".to_string(),
+        };
+        assert_eq!(perm.id, "1");
+        assert_eq!(perm.path, "/test/path");
+        assert_eq!(perm.level, "read");
+    }
+}

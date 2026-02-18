@@ -48,7 +48,7 @@ cargo test       # Rust 테스트
 ├─────────────────────────────────────────────────────┤
 │  Rust Core (src-tauri/)                             │
 │  - Tauri commands (lib.rs)                          │
-│  - SQLite 영속성 (계획됨)                            │
+│  - SQLite 영속성 (구현됨)                            │
 │  - Sidecar 프로세스 관리                             │
 ├─────────────────────────────────────────────────────┤
 │  Agent Runtime (agent-runtime/) - Node.js Sidecar   │
@@ -101,10 +101,11 @@ cargo test       # Rust 테스트
 | Agent Runtime | Node.js 22 (Sidecar) |
 | Protocol | MCP (Model Context Protocol) |
 | Local LLM | Ollama (Sidecar, 계획됨) |
-| Database | SQLite (rusqlite, 계획됨) |
+| Database | SQLite (rusqlite) |
 
 ## Roadmap Reference
 
-- **MVP (v0.1)**: 기본 채팅, 폴더 권한, 파일 R/W, Ollama, 설정 UI
-- **v0.2**: 스킬 시스템, 레시피 엔진, 서브에이전트, Browser MCP
-- **v0.3**: 스킬 마켓플레이스, 다중 제공자 라우팅, Cron 작업
+- **MVP (v0.1)** ✅: 기본 채팅, 폴더 권한, 파일 R/W, Ollama, 설정 UI, Agent Runtime 통합
+- **v0.2** ✅: 스킬 시스템, 레시피 엔진, Browser MCP, 메모리 지속성
+- **v0.3**: 서브에이전트, 다중 제공자 라우팅, Cron 작업, 마켓플레이스
+- **v0.4**: 메모리 시스템, 음성 지원, 플러그인 시스템, 통합 기능, 협업 기능

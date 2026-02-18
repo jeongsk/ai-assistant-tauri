@@ -15,11 +15,14 @@ A privacy-first AI assistant desktop app built with Tauri, React, and MCP.
 | Layer | Technology |
 |-------|------------|
 | Desktop Framework | Tauri v2 |
-| Frontend | React 18 + TypeScript |
+| Frontend | React 19 + TypeScript |
 | State Management | Zustand |
 | Styling | Tailwind CSS |
-| Agent Runtime | Node.js (Sidecar) |
+| Agent Runtime | Node.js 22 (Sidecar) |
 | Local LLM | Ollama |
+| Testing (Frontend) | Vitest + React Testing Library |
+| Testing (Agent) | Jest + ts-jest |
+| Testing (Rust) | cargo test |
 
 ## Getting Started
 
@@ -48,6 +51,21 @@ npm run tauri dev
 npm run tauri build
 ```
 
+### Testing
+
+```bash
+# Frontend tests (Vitest)
+npm run test           # Watch mode
+npm run test:run       # Run once
+npm run test:coverage  # With coverage
+
+# Agent Runtime tests (Jest)
+cd agent-runtime && npm run test
+
+# Rust tests (cargo)
+cd src-tauri && cargo test
+```
+
 ## Project Structure
 
 ```
@@ -70,19 +88,20 @@ ai-assistant-tauri/
 
 ## Roadmap
 
-### MVP (v0.1)
+### MVP (v0.1) ✅
 - [x] Project setup
 - [x] Provider implementations
 - [x] Basic UI components
 - [x] Rust commands
-- [ ] Agent Runtime integration
-- [ ] Full E2E functionality
+- [x] Agent Runtime integration
+- [x] Full E2E functionality
+- [x] Test infrastructure (v0.1.1)
 
-### v0.2
-- [ ] Skills system
-- [ ] Recipe engine
-- [ ] Browser automation
-- [ ] Memory persistence
+### v0.2 ✅
+- [x] Skills system
+- [x] Recipe engine
+- [x] Browser automation
+- [x] Memory persistence
 
 ## License
 

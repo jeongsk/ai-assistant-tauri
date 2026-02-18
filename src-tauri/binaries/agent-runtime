@@ -3,11 +3,16 @@
 # This script locates and executes the agent-runtime Node.js process
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-AGENT_RUNTIME_DIR="$SCRIPT_DIR/../../agent-runtime"
 
-# Check if agent-runtime exists
-if [ ! -d "$AGENT_RUNTIME_DIR" ]; then
-    echo "Error: agent-runtime directory not found at $AGENT_RUNTIME_DIR" >&2
+# Try multiple locations for agent-runtime
+# 1. Production: binaries folder in app bundle (../../agent-runtime)
+# 2. Development debug: target/debug/../../../agent-runtime
+if [ -d "$SCRIPT_DIR/../../agent-runtime" ]; then
+    AGENT_RUNTIME_DIR="$SCRIPT_DIR/../../agent-runtime"
+elif [ -d "$SCRIPT_DIR/../../../agent-runtime" ]; then
+    AGENT_RUNTIME_DIR="$SCRIPT_DIR/../../../agent-runtime"
+else
+    echo "Error: agent-runtime directory not found (searched $SCRIPT_DIR/../../agent-runtime and $SCRIPT_DIR/../../../agent-runtime)" >&2
     exit 1
 fi
 
