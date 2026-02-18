@@ -171,7 +171,20 @@ pub fn run() {
             db::delete_recipe,
             db::create_recipe_execution,
             db::update_recipe_execution,
-            db::list_recipe_executions
+            db::list_recipe_executions,
+            // Sub-agent commands (v0.3)
+            db::list_sub_agents,
+            db::create_sub_agent,
+            db::update_sub_agent,
+            db::delete_sub_agent,
+            db::assign_sub_agent_task,
+            // Cron job commands (v0.3)
+            db::list_cron_jobs,
+            db::create_cron_job,
+            db::update_cron_job,
+            db::delete_cron_job,
+            db::run_cron_job_now,
+            db::list_job_executions
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

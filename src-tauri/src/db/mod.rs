@@ -677,3 +677,388 @@ pub fn list_recipe_executions(
 
     Ok(executions)
 }
+
+// ============================================================================
+// Sub-agent Model and Commands (v0.3)
+// ============================================================================
+
+/// Sub-agent model
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct SubAgent {
+    pub id: String,
+    pub name: String,
+    pub role: String,
+    pub system_prompt: Option<String>,
+    pub tools: String,
+    pub config: String,
+    pub status: String,
+    pub task: Option<String>,
+    pub result: Option<String>,
+    pub error: Option<String>,
+    pub created_at: String,
+    pub completed_at: Option<String>,
+}
+
+#[tauri::command]
+pub fn list_sub_agents(db: tauri::State<'_, DbState>) -> Result<Vec<SubAgent>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, name, role, system_prompt, tools, config, status, task, result, error, created_at, completed_at
+             FROM sub_agents ORDER BY created_at DESC",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let agents = stmt
+        .query_map([], |row| {
+            Ok(SubAgent {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                role: row.get(2)?,
+                system_prompt: row.get(3)?,
+                tools: row.get(4)?,
+                config: row.get(5)?,
+                status: row.get(6)?,
+                task: row.get(7)?,
+                result: row.get(8)?,
+                error: row.get(9)?,
+                created_at: row.get(10)?,
+                completed_at: row.get(11)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(agents)
+}
+
+#[tauri::command]
+pub fn create_sub_agent(
+    db: tauri::State<'_, DbState>,
+    id: String,
+    name: String,
+    agent_type: String,
+    system_prompt: Option<String>,
+    tools: String,
+    config: String,
+) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+
+    conn.execute(
+        "INSERT INTO sub_agents (id, name, role, system_prompt, tools, config, status, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'idle', ?7)",
+        [&id, &name, &agent_type, &system_prompt.unwrap_or_default(), &tools, &config, &now],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn update_sub_agent(
+    db: tauri::State<'_, DbState>,
+    id: String,
+    name: Option<String>,
+    system_prompt: Option<String>,
+    tools: Option<String>,
+    config: Option<String>,
+    status: Option<String>,
+    task: Option<String>,
+    result: Option<String>,
+    error: Option<String>,
+) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+
+    // Build dynamic update query
+    let mut updates = Vec::new();
+    let mut params: Vec<String> = Vec::new();
+
+    if let Some(n) = name {
+        updates.push("name = ?");
+        params.push(n);
+    }
+    if let Some(sp) = system_prompt {
+        updates.push("system_prompt = ?");
+        params.push(sp);
+    }
+    if let Some(t) = tools {
+        updates.push("tools = ?");
+        params.push(t);
+    }
+    if let Some(c) = config {
+        updates.push("config = ?");
+        params.push(c);
+    }
+    if let Some(s) = status {
+        updates.push("status = ?");
+        params.push(s);
+    }
+    if let Some(t) = task {
+        updates.push("task = ?");
+        params.push(t);
+    }
+    if let Some(r) = result {
+        updates.push("result = ?");
+        params.push(r);
+    }
+    if let Some(e) = error {
+        updates.push("error = ?");
+        params.push(e);
+    }
+
+    if updates.is_empty() {
+        return Ok(());
+    }
+
+    params.push(id.clone());
+    let sql = format!("UPDATE sub_agents SET {} WHERE id = ?", updates.join(", "));
+
+    conn.execute(&sql, rusqlite::params_from_iter(params.iter()))
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_sub_agent(db: tauri::State<'_, DbState>, id: String) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+
+    conn.execute("DELETE FROM sub_agents WHERE id = ?1", [&id])
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn assign_sub_agent_task(
+    db: tauri::State<'_, DbState>,
+    id: String,
+    task: String,
+) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+
+    conn.execute(
+        "UPDATE sub_agents SET status = 'running', task = ?1, error = NULL, result = NULL WHERE id = ?2 AND status = 'idle'",
+        [&task, &id],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+// ============================================================================
+// Cron Job Model and Commands (v0.3)
+// ============================================================================
+
+/// Cron job model
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct CronJob {
+    pub id: String,
+    pub name: String,
+    pub schedule: String,
+    pub job_type: String,
+    pub config: String,
+    pub enabled: bool,
+    pub last_run: Option<String>,
+    pub next_run: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// Job execution model
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct JobExecution {
+    pub id: String,
+    pub job_id: String,
+    pub status: String,
+    pub result: Option<String>,
+    pub error: Option<String>,
+    pub started_at: String,
+    pub completed_at: Option<String>,
+}
+
+#[tauri::command]
+pub fn list_cron_jobs(db: tauri::State<'_, DbState>) -> Result<Vec<CronJob>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, name, schedule, job_type, config, enabled, last_run, next_run, created_at, updated_at
+             FROM cron_jobs ORDER BY created_at DESC",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let jobs = stmt
+        .query_map([], |row| {
+            Ok(CronJob {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                schedule: row.get(2)?,
+                job_type: row.get(3)?,
+                config: row.get(4)?,
+                enabled: row.get::<_, i32>(5)? != 0,
+                last_run: row.get(6)?,
+                next_run: row.get(7)?,
+                created_at: row.get(8)?,
+                updated_at: row.get(9)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(jobs)
+}
+
+#[tauri::command]
+pub fn create_cron_job(
+    db: tauri::State<'_, DbState>,
+    id: String,
+    name: String,
+    schedule: String,
+    job_type: String,
+    config: String,
+    enabled: i32,
+) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+
+    conn.execute(
+        "INSERT INTO cron_jobs (id, name, schedule, job_type, config, enabled, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        [&id, &name, &schedule, &job_type, &config, &enabled.to_string(), &now, &now],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn update_cron_job(
+    db: tauri::State<'_, DbState>,
+    id: String,
+    name: Option<String>,
+    schedule: Option<String>,
+    config: Option<String>,
+    enabled: Option<i32>,
+) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+
+    let mut updates = vec!["updated_at = ?"];
+    let mut params: Vec<String> = vec![now.clone()];
+
+    if let Some(n) = name {
+        updates.push("name = ?");
+        params.push(n);
+    }
+    if let Some(s) = schedule {
+        updates.push("schedule = ?");
+        params.push(s);
+    }
+    if let Some(c) = config {
+        updates.push("config = ?");
+        params.push(c);
+    }
+    if let Some(e) = enabled {
+        updates.push("enabled = ?");
+        params.push(e.to_string());
+    }
+
+    params.push(id.clone());
+    let sql = format!("UPDATE cron_jobs SET {} WHERE id = ?", updates.join(", "));
+
+    conn.execute(&sql, rusqlite::params_from_iter(params.iter()))
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_cron_job(db: tauri::State<'_, DbState>, id: String) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+
+    conn.execute("DELETE FROM cron_jobs WHERE id = ?1", [&id])
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn run_cron_job_now(db: tauri::State<'_, DbState>, id: String) -> Result<String, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+
+    let execution_id = format!("exec-{}", uuid::Uuid::new_v4());
+    let now = chrono::Utc::now().to_rfc3339();
+
+    // Create execution record
+    conn.execute(
+        "INSERT INTO job_executions (id, job_id, status, started_at)
+         VALUES (?1, ?2, 'running', ?3)",
+        [&execution_id, &id, &now],
+    )
+    .map_err(|e| e.to_string())?;
+
+    // Update job's last_run
+    conn.execute(
+        "UPDATE cron_jobs SET last_run = ?1 WHERE id = ?2",
+        [&now, &id],
+    )
+    .map_err(|e| e.to_string())?;
+
+    // TODO: Actually execute the job (would need async execution)
+    // For now, just mark as completed
+    let completed_at = chrono::Utc::now().to_rfc3339();
+    conn.execute(
+        "UPDATE job_executions SET status = 'completed', result = 'Job executed', completed_at = ?1 WHERE id = ?2",
+        [&completed_at, &execution_id],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(execution_id)
+}
+
+#[tauri::command]
+pub fn list_job_executions(
+    db: tauri::State<'_, DbState>,
+    job_id: Option<String>,
+) -> Result<Vec<JobExecution>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+
+    let sql = match &job_id {
+        Some(_) => "SELECT id, job_id, status, result, error, started_at, completed_at
+                     FROM job_executions WHERE job_id = ?1 ORDER BY started_at DESC LIMIT 100",
+        None => "SELECT id, job_id, status, result, error, started_at, completed_at
+                 FROM job_executions ORDER BY started_at DESC LIMIT 100",
+    };
+
+    let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+
+    let map_row = |row: &rusqlite::Row| {
+        Ok(JobExecution {
+            id: row.get(0)?,
+            job_id: row.get(1)?,
+            status: row.get(2)?,
+            result: row.get(3)?,
+            error: row.get(4)?,
+            started_at: row.get(5)?,
+            completed_at: row.get(6)?,
+        })
+    };
+
+    let executions = match &job_id {
+        Some(jid) => stmt.query_map([&jid], map_row),
+        None => stmt.query_map([], map_row),
+    }
+    .map_err(|e| e.to_string())?
+    .collect::<Result<Vec<_>, _>>()
+    .map_err(|e| e.to_string())?;
+
+    Ok(executions)
+}

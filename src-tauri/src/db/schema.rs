@@ -3,7 +3,7 @@
 use rusqlite::Connection;
 use rusqlite::Result;
 
-const SCHEMA_VERSION: i32 = 2;
+const _SCHEMA_VERSION: i32 = 3;
 
 pub fn run_migrations(conn: &Connection) -> Result<()> {
     // Create migrations table if not exists
@@ -31,6 +31,10 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
 
     if current_version < 2 {
         migrate_v2(conn)?;
+    }
+
+    if current_version < 3 {
+        migrate_v3(conn)?;
     }
 
     Ok(())
@@ -136,6 +140,77 @@ fn migrate_v2(conn: &Connection) -> Result<()> {
 
         -- Record migration
         INSERT INTO schema_migrations (version) VALUES (2);
+        "#,
+    )?;
+
+    Ok(())
+}
+
+fn migrate_v3(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        r#"
+        -- Extend sub_agents table with task tracking
+        ALTER TABLE sub_agents ADD COLUMN status TEXT NOT NULL DEFAULT 'idle';
+        ALTER TABLE sub_agents ADD COLUMN task TEXT;
+        ALTER TABLE sub_agents ADD COLUMN result TEXT;
+        ALTER TABLE sub_agents ADD COLUMN error TEXT;
+        ALTER TABLE sub_agents ADD COLUMN completed_at TEXT;
+
+        -- Cron jobs table
+        CREATE TABLE IF NOT EXISTS cron_jobs (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            schedule TEXT NOT NULL,
+            job_type TEXT NOT NULL CHECK(job_type IN ('skill', 'recipe', 'prompt', 'system')),
+            config TEXT NOT NULL DEFAULT '{}',
+            enabled INTEGER NOT NULL DEFAULT 1,
+            last_run TEXT,
+            next_run TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        -- Job executions log
+        CREATE TABLE IF NOT EXISTS job_executions (
+            id TEXT PRIMARY KEY,
+            job_id TEXT NOT NULL REFERENCES cron_jobs(id) ON DELETE CASCADE,
+            status TEXT NOT NULL CHECK(status IN ('running', 'completed', 'failed', 'cancelled')),
+            result TEXT,
+            error TEXT,
+            started_at TEXT NOT NULL DEFAULT (datetime('now')),
+            completed_at TEXT
+        );
+
+        -- Routing rules table
+        CREATE TABLE IF NOT EXISTS routing_rules (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT,
+            condition TEXT NOT NULL DEFAULT '{}',
+            provider TEXT NOT NULL,
+            model TEXT,
+            priority INTEGER NOT NULL DEFAULT 0,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        -- Indexes
+        CREATE INDEX IF NOT EXISTS idx_sub_agents_status ON sub_agents(status);
+        CREATE INDEX IF NOT EXISTS idx_cron_jobs_enabled ON cron_jobs(enabled);
+        CREATE INDEX IF NOT EXISTS idx_cron_jobs_next_run ON cron_jobs(next_run);
+        CREATE INDEX IF NOT EXISTS idx_job_executions_job ON job_executions(job_id);
+        CREATE INDEX IF NOT EXISTS idx_routing_rules_priority ON routing_rules(priority);
+
+        -- Insert default routing rules
+        INSERT INTO routing_rules (id, name, description, condition, provider, model, priority) VALUES
+            ('rule-code', 'Code Generation', 'Route coding tasks to capable models', '{"taskTypes":["coding"]}', 'anthropic', 'claude-3-sonnet', 100),
+            ('rule-chat', 'Simple Chat', 'Route simple chat to fast models', '{"taskTypes":["chat"],"maxTokens":500}', 'openai', 'gpt-3.5-turbo', 50),
+            ('rule-analysis', 'Analysis', 'Route analysis to reasoning models', '{"taskTypes":["analysis"]}', 'openai', 'gpt-4', 80),
+            ('rule-creative', 'Creative Writing', 'Route creative tasks to Claude', '{"taskTypes":["creative"]}', 'anthropic', 'claude-3-opus', 90);
+
+        -- Record migration
+        INSERT INTO schema_migrations (version) VALUES (3);
         "#,
     )?;
 
