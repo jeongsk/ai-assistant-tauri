@@ -1,23 +1,51 @@
-import { useState } from 'react';
-import { Settings, FolderOpen, Clock, Menu, X } from 'lucide-react';
-import { ChatView } from './components/chat/ChatView';
-import { ConversationList } from './components/chat/ConversationList';
-import { SettingsDialog } from './components/settings/SettingsDialog';
-import { FileExplorer } from './components/files/FileExplorer';
-import { TaskHistory } from './components/history/TaskHistory';
-import './App.css';
+import { useState, useEffect } from "react";
+import { Settings, FolderOpen, Clock, Menu, X } from "lucide-react";
+import { ChatView } from "./components/chat/ChatView";
+import { ConversationList } from "./components/chat/ConversationList";
+import { SettingsDialog } from "./components/settings/SettingsDialog";
+import { FileExplorer } from "./components/files/FileExplorer";
+import { TaskHistory } from "./components/history/TaskHistory";
+import { useChatStore } from "./stores/chatStore";
+import { useSettingsStore } from "./stores/settingsStore";
+import "./App.css";
 
 function App() {
   const [showSettings, setShowSettings] = useState(false);
-  const [activeView, setActiveView] = useState<'chat' | 'files' | 'history'>('chat');
+  const [activeView, setActiveView] = useState<"chat" | "files" | "history">(
+    "chat",
+  );
   const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  const loadConversations = useChatStore((state) => state.loadConversations);
+  const isLoaded = useChatStore((state) => state.isLoaded);
+  const loadFolderPermissions = useSettingsStore(
+    (state) => state.loadFolderPermissions,
+  );
+  const folderPermissionsLoaded = useSettingsStore(
+    (state) => state.folderPermissionsLoaded,
+  );
+
+  // Load conversations and settings on mount
+  useEffect(() => {
+    if (!isLoaded) {
+      loadConversations();
+    }
+    if (!folderPermissionsLoaded) {
+      loadFolderPermissions();
+    }
+  }, [
+    isLoaded,
+    loadConversations,
+    folderPermissionsLoaded,
+    loadFolderPermissions,
+  ]);
 
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100">
       {/* Sidebar */}
       <aside
         className={`${
-          sidebarOpen ? 'w-64' : 'w-0'
+          sidebarOpen ? "w-64" : "w-0"
         } bg-white dark:bg-gray-900 border-r transition-all duration-300 overflow-hidden flex flex-col`}
       >
         {/* Logo */}
@@ -44,14 +72,14 @@ function App() {
           <NavItem
             icon={<FolderOpen className="w-4 h-4" />}
             label="Files"
-            active={activeView === 'files'}
-            onClick={() => setActiveView('files')}
+            active={activeView === "files"}
+            onClick={() => setActiveView("files")}
           />
           <NavItem
             icon={<Clock className="w-4 h-4" />}
             label="History"
-            active={activeView === 'history'}
-            onClick={() => setActiveView('history')}
+            active={activeView === "history"}
+            onClick={() => setActiveView("history")}
           />
         </nav>
 
@@ -79,13 +107,16 @@ function App() {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col overflow-hidden">
-        {activeView === 'chat' && <ChatView />}
-        {activeView === 'files' && <FileExplorer />}
-        {activeView === 'history' && <HistoryView />}
+        {activeView === "chat" && <ChatView />}
+        {activeView === "files" && <FileExplorer />}
+        {activeView === "history" && <HistoryView />}
       </main>
 
       {/* Settings Dialog */}
-      <SettingsDialog isOpen={showSettings} onClose={() => setShowSettings(false)} />
+      <SettingsDialog
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+      />
     </div>
   );
 }
@@ -103,8 +134,8 @@ function NavItem({ icon, label, active, onClick }: NavItemProps) {
       onClick={onClick}
       className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
         active
-          ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
-          : 'hover:bg-gray-100 dark:hover:bg-gray-800'
+          ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
+          : "hover:bg-gray-100 dark:hover:bg-gray-800"
       }`}
     >
       {icon}

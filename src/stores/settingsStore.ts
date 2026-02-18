@@ -1,5 +1,5 @@
 /**
- * Settings Store
+ * Settings Store with SQLite persistence for folder permissions
  */
 
 import { create } from "zustand";
@@ -27,6 +27,7 @@ interface SettingsState {
 
   // Folder permissions
   folderPermissions: FolderPermission[];
+  folderPermissionsLoaded: boolean;
 
   // UI
   theme: "light" | "dark" | "system";
@@ -37,6 +38,9 @@ interface SettingsState {
   addFolderPermission: (permission: FolderPermission) => void;
   removeFolderPermission: (id: string) => void;
   setTheme: (theme: "light" | "dark" | "system") => void;
+
+  // DB Actions
+  loadFolderPermissions: () => Promise<void>;
 
   // Agent Runtime sync
   syncProvidersToAgent: () => Promise<void>;
@@ -68,6 +72,7 @@ export const useSettingsStore = create<SettingsState>()(
       providers: DEFAULT_PROVIDERS,
       activeProvider: "anthropic",
       folderPermissions: [],
+      folderPermissionsLoaded: false,
       theme: "system",
 
       // Set provider config
@@ -82,15 +87,29 @@ export const useSettingsStore = create<SettingsState>()(
         set({ activeProvider: id });
       },
 
-      // Add folder permission
+      // Add folder permission (with DB persistence)
       addFolderPermission: (permission) => {
+        // Save to DB
+        invoke("add_folder_permission", {
+          id: permission.id,
+          path: permission.path,
+          level: permission.level,
+        }).catch((error) =>
+          console.error("Failed to save folder permission:", error)
+        );
+
         set((state) => ({
           folderPermissions: [...state.folderPermissions, permission],
         }));
       },
 
-      // Remove folder permission
+      // Remove folder permission (with DB persistence)
       removeFolderPermission: (id) => {
+        // Delete from DB
+        invoke("remove_folder_permission", { id }).catch((error) =>
+          console.error("Failed to remove folder permission:", error)
+        );
+
         set((state) => ({
           folderPermissions: state.folderPermissions.filter((p) => p.id !== id),
         }));
@@ -99,6 +118,30 @@ export const useSettingsStore = create<SettingsState>()(
       // Set theme
       setTheme: (theme) => {
         set({ theme });
+      },
+
+      // Load folder permissions from DB
+      loadFolderPermissions: async () => {
+        try {
+          const permissions = await invoke<Array<{
+            id: string;
+            path: string;
+            level: string;
+            created_at: string;
+          }>>("load_folder_permissions");
+
+          set({
+            folderPermissions: permissions.map((p) => ({
+              id: p.id,
+              path: p.path,
+              level: p.level as "read" | "readwrite",
+            })),
+            folderPermissionsLoaded: true,
+          });
+        } catch (error) {
+          console.error("Failed to load folder permissions:", error);
+          set({ folderPermissionsLoaded: true });
+        }
       },
 
       // Sync providers to Agent Runtime
@@ -122,6 +165,13 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: "ai-assistant-settings",
+      // Only persist providers, activeProvider, and theme
+      // Folder permissions are stored in SQLite
+      partialize: (state) => ({
+        providers: state.providers,
+        activeProvider: state.activeProvider,
+        theme: state.theme,
+      }),
     },
   ),
 );

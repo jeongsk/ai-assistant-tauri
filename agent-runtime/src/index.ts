@@ -4,15 +4,21 @@
  * Communicates with Tauri Rust core via stdio JSON-RPC
  */
 
-import { createInterface } from 'readline';
-import { OpenAIProvider } from './providers/openai.js';
-import { AnthropicProvider } from './providers/anthropic.js';
-import type { Message, ChatOptions, ChatResponse, ProviderConfig } from './providers/base.js';
+import { createInterface } from "readline";
+import { OpenAIProvider } from "./providers/openai.js";
+import { AnthropicProvider } from "./providers/anthropic.js";
+import { OllamaProvider } from "./providers/ollama.js";
+import type {
+  Message,
+  ChatOptions,
+  ChatResponse,
+  ProviderConfig,
+} from "./providers/base.js";
 
 // Simple logger
 const logger = {
   info: (msg: string) => console.error(`[INFO] ${msg}`),
-  error: (msg: string, err?: any) => console.error(`[ERROR] ${msg}`, err || ''),
+  error: (msg: string, err?: any) => console.error(`[ERROR] ${msg}`, err || ""),
   debug: (msg: string) => console.error(`[DEBUG] ${msg}`),
 };
 
@@ -28,13 +34,13 @@ const rl = createInterface({
 });
 
 // Handle incoming JSON-RPC messages
-rl.on('line', async (line: string) => {
+rl.on("line", async (line: string) => {
   try {
     const message = JSON.parse(line.trim());
     await handleRequest(message);
   } catch (error) {
-    logger.error('Parse error', error);
-    sendError('Parse error', -32700);
+    logger.error("Parse error", error);
+    sendError("Parse error", -32700);
   }
 });
 
@@ -48,41 +54,41 @@ async function handleRequest(message: any) {
     let result: any;
 
     switch (method) {
-      case 'initialize':
+      case "initialize":
         result = await handleInitialize(params);
         break;
 
-      case 'chat':
+      case "chat":
         result = await handleChat(params);
         break;
 
-      case 'tool_call':
+      case "tool_call":
         result = await handleToolCall(params);
         break;
 
-      case 'get_tools':
+      case "get_tools":
         result = await handleGetTools(params);
         break;
 
-      case 'configure_providers':
+      case "configure_providers":
         result = await handleConfigureProviders(params);
         break;
 
-      case 'shutdown':
+      case "shutdown":
         result = await handleShutdown();
         sendResponse(result, id);
         process.exit(0);
         break;
 
       default:
-        sendError('Method not found', -32601, id);
+        sendError("Method not found", -32601, id);
         return;
     }
 
     sendResponse(result, id);
   } catch (error: any) {
     logger.error(`Error in ${method}`, error);
-    sendError(error.message || 'Internal error', -32603, id);
+    sendError(error.message || "Internal error", -32603, id);
   }
 }
 
@@ -110,8 +116,8 @@ async function handleInitialize(params: any) {
     activeProvider = config.activeProvider;
   }
 
-  logger.info('Agent initialized');
-  return { status: 'initialized' };
+  logger.info("Agent initialized");
+  return { status: "initialized" };
 }
 
 // Configure providers
@@ -136,16 +142,18 @@ async function handleConfigureProviders(params: any) {
     activeProvider = active;
   }
 
-  return { status: 'configured' };
+  return { status: "configured" };
 }
 
 // Create provider instance
 function createProvider(config: ProviderConfig) {
   switch (config.type) {
-    case 'openai':
+    case "openai":
       return new OpenAIProvider(config);
-    case 'anthropic':
+    case "anthropic":
       return new AnthropicProvider(config);
+    case "ollama":
+      return new OllamaProvider(config);
     default:
       throw new Error(`Unknown provider type: ${config.type}`);
   }
@@ -154,7 +162,7 @@ function createProvider(config: ProviderConfig) {
 // Get active provider
 function getActiveProvider() {
   if (!activeProvider) {
-    throw new Error('No active provider configured');
+    throw new Error("No active provider configured");
   }
 
   const provider = providers.get(activeProvider);
@@ -197,37 +205,37 @@ async function handleGetTools(params: any) {
   return {
     tools: [
       {
-        name: 'read_file',
-        description: 'Read file content from disk',
+        name: "read_file",
+        description: "Read file content from disk",
         inputSchema: {
-          type: 'object',
+          type: "object",
           properties: {
-            path: { type: 'string', description: 'File path to read' },
+            path: { type: "string", description: "File path to read" },
           },
-          required: ['path'],
+          required: ["path"],
         },
       },
       {
-        name: 'write_file',
-        description: 'Write content to a file',
+        name: "write_file",
+        description: "Write content to a file",
         inputSchema: {
-          type: 'object',
+          type: "object",
           properties: {
-            path: { type: 'string', description: 'File path to write' },
-            content: { type: 'string', description: 'Content to write' },
+            path: { type: "string", description: "File path to write" },
+            content: { type: "string", description: "Content to write" },
           },
-          required: ['path', 'content'],
+          required: ["path", "content"],
         },
       },
       {
-        name: 'list_directory',
-        description: 'List files in a directory',
+        name: "list_directory",
+        description: "List files in a directory",
         inputSchema: {
-          type: 'object',
+          type: "object",
           properties: {
-            path: { type: 'string', description: 'Directory path to list' },
+            path: { type: "string", description: "Directory path to list" },
           },
-          required: ['path'],
+          required: ["path"],
         },
       },
     ],
@@ -236,14 +244,14 @@ async function handleGetTools(params: any) {
 
 // Shutdown
 async function handleShutdown() {
-  logger.info('Shutting down...');
-  return { status: 'shutdown' };
+  logger.info("Shutting down...");
+  return { status: "shutdown" };
 }
 
 // Send JSON-RPC response
 function sendResponse(result: any, id?: string) {
   const response = {
-    jsonrpc: '2.0',
+    jsonrpc: "2.0",
     result,
     id,
   };
@@ -253,7 +261,7 @@ function sendResponse(result: any, id?: string) {
 // Send JSON-RPC error
 function sendError(message: string, code: number, id?: string) {
   const response = {
-    jsonrpc: '2.0',
+    jsonrpc: "2.0",
     error: { code, message },
     id,
   };
@@ -261,18 +269,18 @@ function sendError(message: string, code: number, id?: string) {
 }
 
 // Handle process lifecycle
-process.on('SIGTERM', async () => {
-  logger.info('Received SIGTERM, shutting down...');
+process.on("SIGTERM", async () => {
+  logger.info("Received SIGTERM, shutting down...");
   await handleShutdown();
   process.exit(0);
 });
 
-process.on('SIGINT', async () => {
-  logger.info('Received SIGINT, shutting down...');
+process.on("SIGINT", async () => {
+  logger.info("Received SIGINT, shutting down...");
   await handleShutdown();
   process.exit(0);
 });
 
 // Signal ready
-logger.info('Agent runtime started');
-sendResponse({ status: 'ready' }, 'init');
+logger.info("Agent runtime started");
+sendResponse({ status: "ready" }, "init");
