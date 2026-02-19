@@ -1,17 +1,18 @@
 import { useState, useEffect } from "react";
-import { Settings, FolderOpen, Clock, Menu, X } from "lucide-react";
+import { Settings, FolderOpen, Clock, Menu, X, ShoppingBag } from "lucide-react";
 import { ChatView } from "./components/chat/ChatView";
 import { ConversationList } from "./components/chat/ConversationList";
 import { SettingsDialog } from "./components/settings/SettingsDialog";
 import { FileExplorer } from "./components/files/FileExplorer";
 import { TaskHistory } from "./components/history/TaskHistory";
+import { MarketplacePanel } from "./components/marketplace/MarketplacePanel";
 import { useChatStore } from "./stores/chatStore";
 import { useSettingsStore } from "./stores/settingsStore";
 import "./App.css";
 
 function App() {
   const [showSettings, setShowSettings] = useState(false);
-  const [activeView, setActiveView] = useState<"chat" | "files" | "history">(
+  const [activeView, setActiveView] = useState<"chat" | "files" | "history" | "marketplace">(
     "chat",
   );
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -81,6 +82,12 @@ function App() {
             active={activeView === "history"}
             onClick={() => setActiveView("history")}
           />
+          <NavItem
+            icon={<ShoppingBag className="w-4 h-4" />}
+            label="Marketplace"
+            active={activeView === "marketplace"}
+            onClick={() => setActiveView("marketplace")}
+          />
         </nav>
 
         {/* Settings */}
@@ -110,6 +117,7 @@ function App() {
         {activeView === "chat" && <ChatView />}
         {activeView === "files" && <FileExplorer />}
         {activeView === "history" && <HistoryView />}
+        {activeView === "marketplace" && <MarketplacePanel />}
       </main>
 
       {/* Settings Dialog */}

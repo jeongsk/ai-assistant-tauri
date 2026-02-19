@@ -5,6 +5,7 @@ mod voice;
 mod plugins;
 mod collaboration;
 mod scheduler;
+mod marketplace;
 
 use scheduler::JobScheduler;
 
@@ -190,6 +191,104 @@ async fn scheduler_cancel_execution(
     Ok(scheduler.cancel_execution(&execution_id).await)
 }
 
+// ============================================================================
+// Marketplace Commands
+// ============================================================================
+
+/// List marketplace items
+#[tauri::command]
+async fn marketplace_list_items(
+    filters: Option<marketplace::MarketplaceFilters>,
+    page: Option<u32>,
+    page_size: Option<u32>,
+) -> Result<Vec<marketplace::MarketplaceItem>, String> {
+    let store = marketplace::MarketplaceStore::default_marketplace();
+    let filters = filters.unwrap_or_default();
+    store.list_items(&filters, page.unwrap_or(1), page_size.unwrap_or(20)).await
+}
+
+/// Get marketplace item details
+#[tauri::command]
+async fn marketplace_get_item(
+    item_id: String,
+) -> Result<marketplace::MarketplaceItem, String> {
+    let store = marketplace::MarketplaceStore::default_marketplace();
+    store.get_item(&item_id).await
+}
+
+/// Search marketplace items
+#[tauri::command]
+async fn marketplace_search_items(
+    query: String,
+    filters: Option<marketplace::MarketplaceFilters>,
+    page: Option<u32>,
+    page_size: Option<u32>,
+) -> Result<Vec<marketplace::MarketplaceItem>, String> {
+    let store = marketplace::MarketplaceStore::default_marketplace();
+    let filters = filters.unwrap_or_default();
+    store.search_items(&query, &filters, page.unwrap_or(1), page_size.unwrap_or(20)).await
+}
+
+/// Get marketplace categories
+#[tauri::command]
+async fn marketplace_get_categories() -> Result<Vec<marketplace::MarketplaceCategory>, String> {
+    let store = marketplace::MarketplaceStore::default_marketplace();
+    store.get_categories().await
+}
+
+/// Install marketplace item
+#[tauri::command]
+async fn marketplace_install_item(
+    item_id: String,
+    app_handle: tauri::AppHandle,
+) -> Result<String, String> {
+    let store = marketplace::MarketplaceStore::default_marketplace();
+    let item = store.get_item(&item_id).await?;
+
+    let install_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+
+    let marketplace_dir = install_dir.join("marketplace");
+    let mut installer = marketplace::MarketplaceInstaller::new(marketplace_dir)?;
+
+    installer.install(&item).await
+}
+
+/// Uninstall marketplace item
+#[tauri::command]
+async fn marketplace_uninstall_item(
+    item_id: String,
+    app_handle: tauri::AppHandle,
+) -> Result<String, String> {
+    let install_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+
+    let marketplace_dir = install_dir.join("marketplace");
+    let mut installer = marketplace::MarketplaceInstaller::new(marketplace_dir)?;
+
+    installer.uninstall(&item_id).await
+}
+
+/// Check for marketplace updates
+#[tauri::command]
+async fn marketplace_check_updates(
+    app_handle: tauri::AppHandle,
+) -> Result<Vec<String>, String> {
+    let install_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+
+    let marketplace_dir = install_dir.join("marketplace");
+    let installer = marketplace::MarketplaceInstaller::new(marketplace_dir)?;
+
+    installer.check_updates().await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -302,7 +401,15 @@ pub fn run() {
             scheduler_stop,
             scheduler_status,
             scheduler_execute_job,
-            scheduler_cancel_execution
+            scheduler_cancel_execution,
+            // Marketplace commands
+            marketplace_list_items,
+            marketplace_get_item,
+            marketplace_search_items,
+            marketplace_get_categories,
+            marketplace_install_item,
+            marketplace_uninstall_item,
+            marketplace_check_updates
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
