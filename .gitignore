@@ -34,3 +34,4 @@ dist-ssr
 .worktrees/
 .security-key
 logs/security/
+/src-tauri/binaries/
