@@ -1,6 +1,6 @@
 //! Cron parsing and scheduling
 
-use chrono::{DateTime, Utc, TimeZone};
+use chrono::{DateTime, Utc, TimeZone, Datelike, Timelike};
 use std::collections::HashMap;
 
 /// Cron expression parser

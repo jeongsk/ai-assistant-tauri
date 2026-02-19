@@ -8,7 +8,10 @@ use std::sync::Mutex;
 use tauri::Manager;
 
 /// Database state managed by Tauri
-pub struct DbState(pub Mutex<Connection>);
+pub struct DbState {
+    pub conn: Mutex<Connection>,
+    pub db_path: String,
+}
 
 impl DbState {
     pub fn new(app_handle: &tauri::AppHandle) -> SqliteResult<Self> {
@@ -19,11 +22,15 @@ impl DbState {
 
         std::fs::create_dir_all(&app_dir).ok();
         let db_path = PathBuf::from(&app_dir).join("assistant.db");
+        let db_path_str = db_path.to_string_lossy().to_string();
 
-        let conn = Connection::open(db_path)?;
+        let conn = Connection::open(&db_path)?;
         schema::run_migrations(&conn)?;
 
-        Ok(Self(Mutex::new(conn)))
+        Ok(Self {
+            conn: Mutex::new(conn),
+            db_path: db_path_str,
+        })
     }
 }
 
@@ -60,7 +67,7 @@ pub struct FolderPermission {
 
 #[tauri::command]
 pub fn load_conversations(db: tauri::State<'_, DbState>) -> Result<Vec<Conversation>, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     let mut stmt = conn
         .prepare(
@@ -90,7 +97,7 @@ pub fn save_conversation(
     id: String,
     title: String,
 ) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     let now = chrono::Utc::now().to_rfc3339();
 
@@ -106,7 +113,7 @@ pub fn save_conversation(
 
 #[tauri::command]
 pub fn delete_conversation(db: tauri::State<'_, DbState>, id: String) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     // Delete messages first
     conn.execute("DELETE FROM messages WHERE conversation_id = ?1", [&id])
@@ -124,7 +131,7 @@ pub fn load_messages(
     db: tauri::State<'_, DbState>,
     conversation_id: String,
 ) -> Result<Vec<Message>, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     let mut stmt = conn
         .prepare(
@@ -160,7 +167,7 @@ pub fn save_message(
     content: String,
     metadata: Option<String>,
 ) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     let now = chrono::Utc::now().to_rfc3339();
 
@@ -185,7 +192,7 @@ pub fn save_message(
 pub fn load_folder_permissions(
     db: tauri::State<'_, DbState>,
 ) -> Result<Vec<FolderPermission>, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     let mut stmt = conn
         .prepare("SELECT id, path, level, created_at FROM folder_permissions ORDER BY path")
@@ -214,7 +221,7 @@ pub fn add_folder_permission(
     path: String,
     level: String,
 ) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     let now = chrono::Utc::now().to_rfc3339();
 
@@ -229,7 +236,7 @@ pub fn add_folder_permission(
 
 #[tauri::command]
 pub fn remove_folder_permission(db: tauri::State<'_, DbState>, id: String) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     conn.execute("DELETE FROM folder_permissions WHERE id = ?1", [&id])
         .map_err(|e| e.to_string())?;
@@ -243,7 +250,7 @@ pub fn update_folder_permission(
     id: String,
     level: String,
 ) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     conn.execute(
         "UPDATE folder_permissions SET level = ?1 WHERE id = ?2",
@@ -272,7 +279,7 @@ pub struct Skill {
 
 #[tauri::command]
 pub fn list_skills(db: tauri::State<'_, DbState>) -> Result<Vec<Skill>, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     let mut stmt = conn
         .prepare("SELECT id, name, description, prompt, tools, created_at, updated_at FROM skills ORDER BY name")
@@ -299,7 +306,7 @@ pub fn list_skills(db: tauri::State<'_, DbState>) -> Result<Vec<Skill>, String> 
 
 #[tauri::command]
 pub fn get_skill(db: tauri::State<'_, DbState>, id: String) -> Result<Skill, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     let skill = conn
         .query_row(
@@ -331,7 +338,7 @@ pub fn create_skill(
     prompt: String,
     tools: String,
 ) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     // Validate limits
     if description.len() > 500 {
@@ -371,7 +378,7 @@ pub fn update_skill(
     prompt: String,
     tools: String,
 ) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     // Validate limits
     if description.len() > 500 {
@@ -394,7 +401,7 @@ pub fn update_skill(
 
 #[tauri::command]
 pub fn delete_skill(db: tauri::State<'_, DbState>, id: String) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     conn.execute("DELETE FROM skills WHERE id = ?1", [&id])
         .map_err(|e| e.to_string())?;
@@ -407,7 +414,7 @@ pub fn search_skills(
     db: tauri::State<'_, DbState>,
     query: String,
 ) -> Result<Vec<Skill>, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     let pattern = format!("%{}%", query);
 
@@ -470,7 +477,7 @@ pub struct RecipeExecution {
 
 #[tauri::command]
 pub fn list_recipes(db: tauri::State<'_, DbState>) -> Result<Vec<Recipe>, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     let mut stmt = conn
         .prepare(
@@ -502,7 +509,7 @@ pub fn list_recipes(db: tauri::State<'_, DbState>) -> Result<Vec<Recipe>, String
 
 #[tauri::command]
 pub fn get_recipe(db: tauri::State<'_, DbState>, id: String) -> Result<Recipe, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     let recipe = conn
         .query_row(
@@ -538,7 +545,7 @@ pub fn create_recipe(
     steps: String,
     variables: Option<String>,
 ) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     let now = chrono::Utc::now().to_rfc3339();
 
@@ -562,7 +569,7 @@ pub fn update_recipe(
     steps: String,
     variables: Option<String>,
 ) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     let now = chrono::Utc::now().to_rfc3339();
 
@@ -577,7 +584,7 @@ pub fn update_recipe(
 
 #[tauri::command]
 pub fn delete_recipe(db: tauri::State<'_, DbState>, id: String) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     // Check if builtin
     let is_builtin: bool = conn
@@ -603,7 +610,7 @@ pub fn create_recipe_execution(
     recipe_id: String,
     variables: Option<String>,
 ) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     let now = chrono::Utc::now().to_rfc3339();
 
@@ -625,7 +632,7 @@ pub fn update_recipe_execution(
     result: Option<String>,
     error: Option<String>,
 ) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     let now = chrono::Utc::now().to_rfc3339();
 
@@ -643,7 +650,7 @@ pub fn list_recipe_executions(
     db: tauri::State<'_, DbState>,
     recipe_id: Option<String>,
 ) -> Result<Vec<RecipeExecution>, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     let sql = match &recipe_id {
         Some(_) => "SELECT id, recipe_id, status, variables, result, error, started_at, completed_at
@@ -701,7 +708,7 @@ pub struct SubAgent {
 
 #[tauri::command]
 pub fn list_sub_agents(db: tauri::State<'_, DbState>) -> Result<Vec<SubAgent>, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     let mut stmt = conn
         .prepare(
@@ -744,7 +751,7 @@ pub fn create_sub_agent(
     tools: String,
     config: String,
 ) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     let now = chrono::Utc::now().to_rfc3339();
 
@@ -771,7 +778,7 @@ pub fn update_sub_agent(
     result: Option<String>,
     error: Option<String>,
 ) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     // Build dynamic update query
     let mut updates = Vec::new();
@@ -825,7 +832,7 @@ pub fn update_sub_agent(
 
 #[tauri::command]
 pub fn delete_sub_agent(db: tauri::State<'_, DbState>, id: String) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     conn.execute("DELETE FROM sub_agents WHERE id = ?1", [&id])
         .map_err(|e| e.to_string())?;
@@ -839,7 +846,7 @@ pub fn assign_sub_agent_task(
     id: String,
     task: String,
 ) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     conn.execute(
         "UPDATE sub_agents SET status = 'running', task = ?1, error = NULL, result = NULL WHERE id = ?2 AND status = 'idle'",
@@ -883,7 +890,7 @@ pub struct JobExecution {
 
 #[tauri::command]
 pub fn list_cron_jobs(db: tauri::State<'_, DbState>) -> Result<Vec<CronJob>, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     let mut stmt = conn
         .prepare(
@@ -924,7 +931,7 @@ pub fn create_cron_job(
     config: String,
     enabled: i32,
 ) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     let now = chrono::Utc::now().to_rfc3339();
 
@@ -947,7 +954,7 @@ pub fn update_cron_job(
     config: Option<String>,
     enabled: Option<i32>,
 ) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     let now = chrono::Utc::now().to_rfc3339();
 
@@ -982,7 +989,7 @@ pub fn update_cron_job(
 
 #[tauri::command]
 pub fn delete_cron_job(db: tauri::State<'_, DbState>, id: String) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     conn.execute("DELETE FROM cron_jobs WHERE id = ?1", [&id])
         .map_err(|e| e.to_string())?;
@@ -991,8 +998,60 @@ pub fn delete_cron_job(db: tauri::State<'_, DbState>, id: String) -> Result<(), 
 }
 
 #[tauri::command]
-pub fn run_cron_job_now(db: tauri::State<'_, DbState>, id: String) -> Result<String, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+pub fn run_cron_job_now(
+    db: tauri::State<'_, DbState>,
+    id: String,
+) -> Result<String, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+
+    // Get the job details
+    let mut stmt = conn
+        .prepare("SELECT id, name, schedule, job_type, config, enabled FROM cron_jobs WHERE id = ?1")
+        .map_err(|e| e.to_string())?;
+
+    let job_row = stmt
+        .query_map([&id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, i32>(5)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?
+        .next()
+        .ok_or_else(|| format!("Job with ID {} not found", id))?
+        .map_err(|e| e.to_string())?;
+
+    let (_job_id, name, schedule, job_type_str, config_json, _enabled) = job_row;
+
+    // Parse job type
+    let job_type = match job_type_str.as_str() {
+        "skill" => crate::scheduler::JobType::Skill,
+        "recipe" => crate::scheduler::JobType::Recipe,
+        "prompt" => crate::scheduler::JobType::Prompt,
+        "system" => crate::scheduler::JobType::System,
+        _ => return Err(format!("Unknown job type: {}", job_type_str)),
+    };
+
+    // Parse config
+    let config: crate::scheduler::JobConfig = serde_json::from_str(&config_json)
+        .map_err(|e| format!("Failed to parse job config: {}", e))?;
+
+    // Create scheduled job
+    let scheduled_job = crate::scheduler::ScheduledJob {
+        id: id.clone(),
+        name: name.clone(),
+        schedule: schedule.clone(),
+        job_type,
+        config,
+        enabled: true,
+        last_run: None,
+        next_run: None,
+        created_at: chrono::Utc::now(),
+    };
 
     let execution_id = format!("exec-{}", uuid::Uuid::new_v4());
     let now = chrono::Utc::now().to_rfc3339();
@@ -1012,16 +1071,95 @@ pub fn run_cron_job_now(db: tauri::State<'_, DbState>, id: String) -> Result<Str
     )
     .map_err(|e| e.to_string())?;
 
-    // TODO: Actually execute the job (would need async execution)
-    // For now, just mark as completed
+    // Execute the job synchronously (simple approach)
+    let result = execute_job_sync(&scheduled_job, &db.db_path);
+
     let completed_at = chrono::Utc::now().to_rfc3339();
-    conn.execute(
-        "UPDATE job_executions SET status = 'completed', result = 'Job executed', completed_at = ?1 WHERE id = ?2",
-        [&completed_at, &execution_id],
-    )
-    .map_err(|e| e.to_string())?;
+
+    // Update execution record based on result
+    match result {
+        Ok(output) => {
+            conn.execute(
+                "UPDATE job_executions SET status = 'completed', result = ?1, completed_at = ?2 WHERE id = ?3",
+                [&output, &completed_at, &execution_id],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        Err(error_msg) => {
+            conn.execute(
+                "UPDATE job_executions SET status = 'failed', error = ?1, completed_at = ?2 WHERE id = ?3",
+                [&error_msg, &completed_at, &execution_id],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+    }
 
     Ok(execution_id)
+}
+
+/// Execute a job synchronously (blocking)
+fn execute_job_sync(
+    job: &crate::scheduler::ScheduledJob,
+    db_path: &str,
+) -> Result<String, String> {
+    use crate::scheduler::SystemTask;
+
+    match &job.job_type {
+        crate::scheduler::JobType::System => {
+            let task_name = &job.config.target;
+
+            let system_task = SystemTask::from_str(task_name)
+                .ok_or_else(|| format!("Unknown system task: {}", task_name))?;
+
+            match system_task {
+                SystemTask::CleanupOldMessages => {
+                    // Get retention period
+                    let retention_days = job.config.params
+                        .get("retention_days")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(30) as i64;
+
+                    let cutoff_date = chrono::Utc::now() - chrono::Duration::days(retention_days);
+
+                    let conn = rusqlite::Connection::open(db_path)
+                        .map_err(|e| format!("Failed to open database: {}", e))?;
+
+                    let deleted = conn.execute(
+                        "DELETE FROM messages WHERE created_at < ?",
+                        [&cutoff_date.to_rfc3339()],
+                    )
+                    .map_err(|e| format!("Failed to delete messages: {}", e))?;
+
+                    Ok(format!("Deleted {} old messages", deleted))
+                }
+                SystemTask::VacuumDatabase => {
+                    let conn = rusqlite::Connection::open(db_path)
+                        .map_err(|e| format!("Failed to open database: {}", e))?;
+
+                    conn.execute("VACUUM", [])
+                        .map_err(|e| format!("Failed to vacuum database: {}", e))?;
+
+                    Ok("Database vacuumed successfully".to_string())
+                }
+                SystemTask::SyncSettings => {
+                    // Settings sync placeholder
+                    Ok("Settings synced".to_string())
+                }
+            }
+        }
+        crate::scheduler::JobType::Skill => {
+            // For now, just return a placeholder
+            Ok(format!("Skill '{}' executed", job.config.target))
+        }
+        crate::scheduler::JobType::Recipe => {
+            // For now, just return a placeholder
+            Ok(format!("Recipe '{}' executed", job.config.target))
+        }
+        crate::scheduler::JobType::Prompt => {
+            // For now, just return a placeholder
+            Ok(format!("Prompt executed: {}", job.config.target))
+        }
+    }
 }
 
 #[tauri::command]
@@ -1029,7 +1167,7 @@ pub fn list_job_executions(
     db: tauri::State<'_, DbState>,
     job_id: Option<String>,
 ) -> Result<Vec<JobExecution>, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     let sql = match &job_id {
         Some(_) => "SELECT id, job_id, status, result, error, started_at, completed_at

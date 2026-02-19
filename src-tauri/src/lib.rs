@@ -4,6 +4,7 @@ mod sidecar;
 mod voice;
 mod plugins;
 mod collaboration;
+mod scheduler;
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
