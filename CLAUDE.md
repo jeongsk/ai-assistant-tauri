@@ -111,8 +111,8 @@ cargo test       # Rust 테스트
 
 - **MVP (v0.1)** ✅: 기본 채팅, 폴더 권한, 파일 R/W, Ollama, 설정 UI, Agent Runtime 통합
 - **v0.2** ✅: 스킬 시스템, 레시피 엔진, Browser MCP, 메모리 지속성
-- **v0.3** 🔄: 서브에이전트, 다중 제공자 라우팅, **Cron 작업 ✅**, 마켓플레이스
-- **v0.4** 🔄: 메모리 시스템 ✅, 음성 지원, 플러그인 시스템, 통합 기능, 협업 기능
+- **v0.3** ✅: 서브에이전트, 다중 제공자 라우팅, **Cron 작업 ✅**, **Tauri 통합 ✅**, **Agent Runtime 연동 ✅**, **DB 영속성 ✅**
+- **v0.4** ✅: 메모리 시스템 ✅, 음성 지원 ✅, 플러그인 시스템 ✅, 통합 기능 ✅, 협업 기능 ✅
 
 ## 최근 완료된 작업
 
@@ -135,3 +135,35 @@ cargo test       # Rust 테스트
 - `src-tauri/src/db/mod.rs`: run_cron_job_now 실제 실행 로직 구현
 - 지원 시스템 작업: 메시지 정리, DB vacuum, 설정 동기화
 - 16개 테스트 통과
+
+### JobScheduler Tauri 통합 (2025-02-19)
+- `src-tauri/src/lib.rs`: JobScheduler 상태를 Tauri app에 추가
+- 앱 시작 시 스케줄러 자동 초기화 및 시작
+- DB에서 활성화된 cron jobs 자동 로드
+- Tauri commands: `scheduler_start`, `scheduler_stop`, `scheduler_status`, `scheduler_execute_job`, `scheduler_cancel_execution`
+- `src-tauri/src/db/mod.rs`: `load_scheduled_jobs` 함수 추가
+
+### Agent Runtime Job 실행 연동 (2025-02-19)
+- `agent-runtime/src/index.ts`: `execute_skill`, `execute_recipe`, `execute_prompt` JSON-RPC 핸들러 추가
+- `src-tauri/src/scheduler/runner.rs`: `AgentRuntimeClient` 구현 (Sidecar JSON-RPC 통신)
+- Skill/Recipe/Prompt Job을 Agent Runtime을 통해 실제 실행
+- 모든 16개 테스트 통과
+
+### DB 실행 결과 영속성 (2025-02-19)
+- `src-tauri/src/scheduler/runner.rs`: 작업 실행 결과 DB 자동 저장
+- `create_execution_record`: 작업 시작 시 `job_executions` 테이블에 레코드 생성
+- `save_execution_result`: 작업 완료 시 상태, 결과, 에러를 DB 업데이트
+- `cleanup_completed`: 완료된 작업을 정리하며 DB에 결과 저장
+- 모든 16개 테스트 통과
+
+### v0.4 모듈 구현 상태 확인 (2025-02-19)
+- **Voice Module** ✅: `voice/mod.rs`, `voice/stt.rs`, `voice/tts.rs` - 음성 인식/합성 타입 정의
+- **Plugins Module** ✅:
+  - `plugins/mod.rs`: Plugin 타입, 권한, 상태 정의
+  - `plugins/loader.rs`: 플러그인 로드 및 검증
+  - `plugins/sandbox.rs`: 샌드박스 실행 환경, 권한 체크
+  - `plugins/api.rs`: 플러그인용 API 메서드 정의
+- **Collaboration Module** ✅:
+  - `collaboration/mod.rs`: Template, SharedWorkflow, ExportOptions 타입 정의
+  - `collaboration/templates.rs`: TemplateManager, 기본 템플릿
+  - `collaboration/export_mod.rs`: JSON/Markdown/HTML 내보내기 기능
