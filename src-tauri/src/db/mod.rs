@@ -1200,3 +1200,69 @@ pub fn list_job_executions(
 
     Ok(executions)
 }
+
+// ============================================================================
+// Scheduled Jobs for JobScheduler
+// ============================================================================
+
+/// Load all enabled scheduled jobs from database for the JobScheduler
+pub fn load_scheduled_jobs(
+    app_handle: &tauri::AppHandle,
+) -> Result<Vec<crate::scheduler::ScheduledJob>, String> {
+    let db_state = app_handle.try_state::<DbState>()
+        .ok_or("Database state not found")?;
+
+    let conn = db_state.conn.lock().map_err(|e| e.to_string())?;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, name, schedule, job_type, config, enabled, last_run, next_run, created_at
+             FROM cron_jobs WHERE enabled = 1"
+        )
+        .map_err(|e| e.to_string())?;
+
+    let jobs = stmt
+        .query_map([], |row| {
+            use crate::scheduler::{JobType, JobConfig, ScheduledJob};
+            use chrono::DateTime;
+
+            let job_type_str: String = row.get(3)?;
+            let config_json: String = row.get(4)?;
+            let last_run: Option<String> = row.get(6)?;
+            let next_run: Option<String> = row.get(7)?;
+            let created_at_str: String = row.get(8)?;
+
+            let job_type = match job_type_str.as_str() {
+                "skill" => JobType::Skill,
+                "recipe" => JobType::Recipe,
+                "prompt" => JobType::Prompt,
+                "system" => JobType::System,
+                _ => JobType::System,
+            };
+
+            let config: JobConfig = serde_json::from_str(&config_json)
+                .unwrap_or_else(|_| JobConfig {
+                    target: "".to_string(),
+                    params: std::collections::HashMap::new(),
+                });
+
+            Ok(ScheduledJob {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                schedule: row.get(2)?,
+                job_type,
+                config,
+                enabled: true,
+                last_run: last_run.and_then(|s| DateTime::parse_from_rfc3339(&s).ok()).map(|dt| dt.with_timezone(&chrono::Utc)),
+                next_run: next_run.and_then(|s| DateTime::parse_from_rfc3339(&s).ok()).map(|dt| dt.with_timezone(&chrono::Utc)),
+                created_at: DateTime::parse_from_rfc3339(&created_at_str)
+                    .map(|dt| dt.with_timezone(&chrono::Utc))
+                    .unwrap_or_else(|_| chrono::Utc::now()),
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(jobs)
+}

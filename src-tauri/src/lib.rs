@@ -6,8 +6,11 @@ mod plugins;
 mod collaboration;
 mod scheduler;
 
+use scheduler::JobScheduler;
+
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::sync::Arc;
 use tauri::Manager;
 
 /// Message structure
@@ -119,6 +122,74 @@ fn list_directory(path: &str) -> Result<Vec<String>, String> {
     Ok(result)
 }
 
+// ============================================================================
+// Scheduler Commands (JobScheduler)
+// ============================================================================
+
+/// Scheduler status response
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SchedulerStatus {
+    pub running: bool,
+    pub job_count: usize,
+    pub running_count: usize,
+}
+
+/// Start the job scheduler
+#[tauri::command]
+async fn scheduler_start(
+    scheduler: tauri::State<'_, Arc<tokio::sync::Mutex<JobScheduler>>>,
+) -> Result<(), String> {
+    let scheduler = scheduler.lock().await;
+    scheduler.start().await
+}
+
+/// Stop the job scheduler
+#[tauri::command]
+async fn scheduler_stop(
+    scheduler: tauri::State<'_, Arc<tokio::sync::Mutex<JobScheduler>>>,
+) -> Result<(), String> {
+    let scheduler = scheduler.lock().await;
+    scheduler.stop().await;
+    Ok(())
+}
+
+/// Get scheduler status
+#[tauri::command]
+async fn scheduler_status(
+    scheduler: tauri::State<'_, Arc<tokio::sync::Mutex<JobScheduler>>>,
+) -> Result<SchedulerStatus, String> {
+    let scheduler = scheduler.lock().await;
+    let running = scheduler.is_running().await;
+    let job_count = scheduler.get_jobs().await.len();
+    let running_count = scheduler.running_count().await;
+
+    Ok(SchedulerStatus {
+        running,
+        job_count,
+        running_count,
+    })
+}
+
+/// Execute a scheduled job immediately
+#[tauri::command]
+async fn scheduler_execute_job(
+    scheduler: tauri::State<'_, Arc<tokio::sync::Mutex<JobScheduler>>>,
+    job_id: String,
+) -> Result<String, String> {
+    let scheduler = scheduler.lock().await;
+    scheduler.execute_now(&job_id).await
+}
+
+/// Cancel a running job execution
+#[tauri::command]
+async fn scheduler_cancel_execution(
+    scheduler: tauri::State<'_, Arc<tokio::sync::Mutex<JobScheduler>>>,
+    execution_id: String,
+) -> Result<bool, String> {
+    let scheduler = scheduler.lock().await;
+    Ok(scheduler.cancel_execution(&execution_id).await)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -129,11 +200,48 @@ pub fn run() {
             // Initialize database
             let db_state = db::DbState::new(app.handle())
                 .expect("Failed to initialize database");
+            let db_path = db_state.db_path.clone();
+
             app.manage(db_state);
 
             // Initialize sidecar state
             let sidecar_state = std::sync::Mutex::new(sidecar::SidecarState::new());
             app.manage(sidecar_state);
+
+            // Initialize job scheduler
+            let scheduler_config = scheduler::SchedulerConfig {
+                check_interval_secs: 60,
+                db_path: db_path.clone(),
+                max_concurrent_jobs: 5,
+            };
+            let job_scheduler = Arc::new(tokio::sync::Mutex::new(JobScheduler::new(scheduler_config)));
+            app.manage(job_scheduler);
+
+            // Load jobs from database and start scheduler
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                // Load jobs from DB
+                if let Ok(jobs) = db::load_scheduled_jobs(&app_handle) {
+                    let scheduler = app_handle.try_state::<Arc<tokio::sync::Mutex<JobScheduler>>>();
+                    if let Some(scheduler) = scheduler {
+                        let mut scheduler = scheduler.lock().await;
+                        if let Err(e) = scheduler.load_jobs(jobs).await {
+                            tracing::error!("Failed to load scheduled jobs: {}", e);
+                        } else {
+                            scheduler.refresh_schedule().await;
+                        }
+                    }
+                }
+
+                // Start the scheduler
+                let scheduler = app_handle.try_state::<Arc<tokio::sync::Mutex<JobScheduler>>>();
+                if let Some(scheduler) = scheduler {
+                    let scheduler = scheduler.lock().await;
+                    if let Err(e) = scheduler.start().await {
+                        tracing::error!("Failed to start scheduler: {}", e);
+                    }
+                }
+            });
 
             Ok(())
         })
@@ -188,7 +296,13 @@ pub fn run() {
             db::update_cron_job,
             db::delete_cron_job,
             db::run_cron_job_now,
-            db::list_job_executions
+            db::list_job_executions,
+            // Scheduler commands
+            scheduler_start,
+            scheduler_stop,
+            scheduler_status,
+            scheduler_execute_job,
+            scheduler_cancel_execution
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
