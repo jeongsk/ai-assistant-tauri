@@ -398,6 +398,7 @@ pub struct ExecutionResult {
 pub struct JobExecutor {
     context: ExecutionContext,
     running_jobs: Arc<Mutex<HashMap<String, tokio::task::JoinHandle<(String, ExecutionResult)>>>>,
+    completed_results: Arc<StdMutex<HashMap<String, (String, ExecutionResult)>>>,
     semaphore: Arc<Semaphore>,
 }
 
@@ -410,6 +411,7 @@ impl JobExecutor {
         Self {
             context,
             running_jobs: Arc::new(Mutex::new(HashMap::new())),
+            completed_results: Arc::new(StdMutex::new(HashMap::new())),
             semaphore,
         }
     }
@@ -421,6 +423,12 @@ impl JobExecutor {
         let execution_id_clone = execution_id.clone();
         let context = self.context.clone();
         let semaphore = self.semaphore.clone();
+        let completed_results = self.completed_results.clone();
+
+        // Create execution record in database
+        if let Err(e) = Self::create_execution_record(&context, &execution_id, &job_id) {
+            tracing::error!("Failed to create execution record: {}", e);
+        }
 
         // Spawn the job execution task
         let handle = tokio::spawn(async move {
@@ -433,7 +441,12 @@ impl JobExecutor {
                 JobType::Prompt => Self::execute_prompt(&job, &context).await,
             };
 
-            // Store the result (in a real implementation, this would update the database)
+            // Store the result in completed results
+            {
+                let mut results = completed_results.lock().unwrap();
+                results.insert(execution_id_clone.clone(), (job_id.clone(), result.clone()));
+            }
+
             tracing::info!(
                 "Job {} execution {} completed with status: {:?}",
                 job_id,
@@ -449,6 +462,31 @@ impl JobExecutor {
         running.insert(execution_id.clone(), handle);
 
         execution_id
+    }
+
+    /// Create execution record in database
+    fn create_execution_record(
+        context: &ExecutionContext,
+        execution_id: &str,
+        job_id: &str,
+    ) -> Result<(), String> {
+        use rusqlite::params;
+
+        let conn = rusqlite::Connection::open(&context.db_path)
+            .map_err(|e| format!("Failed to open database: {}", e))?;
+
+        conn.execute(
+            "INSERT INTO job_executions (id, job_id, status, started_at) VALUES (?, ?, ?, ?)",
+            params![
+                execution_id,
+                job_id,
+                "running",
+                Utc::now().to_rfc3339(),
+            ],
+        )
+        .map_err(|e| format!("Failed to create execution record: {}", e))?;
+
+        Ok(())
     }
 
     /// Execute a system task
@@ -626,20 +664,75 @@ impl JobExecutor {
         self.running_jobs.lock().await.len()
     }
 
-    /// Clean up completed jobs
+    /// Clean up completed jobs and save results to database
     pub async fn cleanup_completed(&self) {
         let mut running = self.running_jobs.lock().await;
         let mut to_remove = Vec::new();
+        let mut results_to_save = Vec::new();
 
+        // Find finished jobs
         for (id, handle) in running.iter() {
             if handle.is_finished() {
                 to_remove.push(id.clone());
             }
         }
 
+        // Remove from running and collect results
         for id in to_remove {
-            running.remove(&id);
+            if let Some(handle) = running.remove(&id) {
+                // Try to get the result from completed_results
+                let results = self.completed_results.lock().unwrap();
+                if let Some((job_id, result)) = results.get(&id) {
+                    results_to_save.push((id.clone(), job_id.clone(), result.clone()));
+                }
+            }
         }
+
+        // Save results to database
+        for (execution_id, job_id, result) in results_to_save {
+            if let Err(e) = Self::save_execution_result(&self.context, &execution_id, &job_id, &result) {
+                tracing::error!("Failed to save execution result: {}", e);
+            }
+
+            // Remove from completed results after saving
+            let mut results = self.completed_results.lock().unwrap();
+            results.remove(&execution_id);
+        }
+    }
+
+    /// Save execution result to database
+    fn save_execution_result(
+        context: &ExecutionContext,
+        execution_id: &str,
+        job_id: &str,
+        result: &ExecutionResult,
+    ) -> Result<(), String> {
+        use rusqlite::params;
+
+        let conn = rusqlite::Connection::open(&context.db_path)
+            .map_err(|e| format!("Failed to open database: {}", e))?;
+
+        let status_str = match result.status {
+            ExecutionStatus::Running => "running",
+            ExecutionStatus::Completed => "completed",
+            ExecutionStatus::Failed => "failed",
+            ExecutionStatus::Cancelled => "cancelled",
+        };
+
+        // Update the execution record
+        conn.execute(
+            "UPDATE job_executions SET status = ?, result = ?, error = ?, completed_at = ? WHERE id = ?",
+            params![
+                status_str,
+                result.output.as_deref(),
+                result.error.as_deref(),
+                Utc::now().to_rfc3339(),
+                execution_id,
+            ],
+        )
+        .map_err(|e| format!("Failed to update execution: {}", e))?;
+
+        Ok(())
     }
 }
 
