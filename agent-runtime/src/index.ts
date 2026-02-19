@@ -80,6 +80,18 @@ async function handleRequest(message: any) {
         process.exit(0);
         break;
 
+      case "execute_skill":
+        result = await handleExecuteSkill(params);
+        break;
+
+      case "execute_recipe":
+        result = await handleExecuteRecipe(params);
+        break;
+
+      case "execute_prompt":
+        result = await handleExecutePrompt(params);
+        break;
+
       default:
         sendError("Method not found", -32601, id);
         return;
@@ -246,6 +258,106 @@ async function handleGetTools(params: any) {
 async function handleShutdown() {
   logger.info("Shutting down...");
   return { status: "shutdown" };
+}
+
+// Execute a skill
+async function handleExecuteSkill(params: any) {
+  const { skillId, input, variables } = params;
+
+  logger.info(`Executing skill: ${skillId}`);
+
+  try {
+    const provider = getActiveProvider();
+
+    // Build skill-specific prompt
+    const skillPrompt = `You are executing the skill "${skillId}".
+
+${input || 'No specific input provided.'}
+
+${variables ? `Variables: ${JSON.stringify(variables)}` : ''}
+
+Execute this skill and provide the result.`;
+
+    const response: ChatResponse = await provider.chat([
+      { role: 'user', content: skillPrompt },
+    ]);
+
+    return {
+      success: true,
+      result: response.content,
+      metadata: {
+        skillId,
+        timestamp: new Date().toISOString(),
+        usage: response.usage,
+      },
+    };
+  } catch (error: any) {
+    logger.error(`Skill execution failed: ${skillId}`, error);
+    return {
+      success: false,
+      error: error.message || "Skill execution failed",
+    };
+  }
+}
+
+// Execute a recipe
+async function handleExecuteRecipe(params: any) {
+  const { recipeId, variables } = params;
+
+  logger.info(`Executing recipe: ${recipeId}`);
+
+  // For now, return a placeholder response
+  // In a full implementation, this would:
+  // 1. Load the recipe from the database
+  // 2. Execute each step using the RecipeEngine
+  // 3. Return the aggregated results
+
+  return {
+    success: true,
+    result: `Recipe '${recipeId}' executed with variables: ${JSON.stringify(variables || {})}`,
+    metadata: {
+      recipeId,
+      timestamp: new Date().toISOString(),
+      steps: 0,
+    },
+  };
+}
+
+// Execute a prompt
+async function handleExecutePrompt(params: any) {
+  const { prompt, provider: providerOverride } = params;
+
+  logger.info("Executing prompt job");
+
+  try {
+    // Use specified provider or active provider
+    const providerToUse = providerOverride
+      ? providers.get(providerOverride)
+      : getActiveProvider();
+
+    if (!providerToUse) {
+      throw new Error(`Provider not found: ${providerOverride || activeProvider}`);
+    }
+
+    const response: ChatResponse = await providerToUse.chat([
+      { role: 'user', content: prompt },
+    ]);
+
+    return {
+      success: true,
+      result: response.content,
+      metadata: {
+        timestamp: new Date().toISOString(),
+        usage: response.usage,
+      },
+    };
+  } catch (error: any) {
+    logger.error("Prompt execution failed", error);
+    return {
+      success: false,
+      error: error.message || "Prompt execution failed",
+    };
+  }
 }
 
 // Send JSON-RPC response

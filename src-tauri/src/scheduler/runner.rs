@@ -2,10 +2,13 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::{Mutex, Semaphore};
+use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
+use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::sync::{Arc, Mutex as StdMutex};
+use tokio::sync::{Mutex, Semaphore};
 
 /// Job type
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -90,6 +93,8 @@ pub struct ExecutionContext {
     pub agent_endpoint: Option<String>,
     /// Maximum execution time in seconds
     pub timeout_secs: u64,
+    /// Path to agent runtime binary
+    pub agent_binary_path: Option<PathBuf>,
 }
 
 impl Default for ExecutionContext {
@@ -98,7 +103,286 @@ impl Default for ExecutionContext {
             db_path: PathBuf::from("./app.db"),
             agent_endpoint: None,
             timeout_secs: 300, // 5 minutes default
+            agent_binary_path: None,
         }
+    }
+}
+
+/// Agent runtime sidecar client
+pub struct AgentRuntimeClient {
+    process: StdMutex<Option<SidecarProcess>>,
+}
+
+impl AgentRuntimeClient {
+    /// Create a new client (but don't spawn the process yet)
+    pub fn new() -> Self {
+        Self {
+            process: StdMutex::new(None),
+        }
+    }
+
+    /// Find the agent runtime binary path
+    fn find_binary_path() -> Result<PathBuf, String> {
+        let exe_path = std::env::current_exe()
+            .map_err(|e| format!("Failed to get exe path: {}", e))?;
+
+        // Try binaries folder
+        let bin_path = exe_path
+            .parent()
+            .and_then(|p| p.parent())
+            .map(|p| p.join("binaries").join("agent-runtime"))
+            .filter(|p| p.exists());
+
+        // Try same directory
+        if bin_path.is_none() {
+            let same_dir = exe_path
+                .parent()
+                .map(|p| p.join("agent-runtime"))
+                .filter(|p| p.exists());
+            return same_dir.ok_or_else(|| {
+                "Agent runtime binary not found".to_string()
+            });
+        }
+
+        bin_path.ok_or_else(|| {
+            "Agent runtime binary not found".to_string()
+        })
+    }
+
+    /// Ensure the sidecar process is running
+    fn ensure_running(&self) -> Result<(), String> {
+        let mut guard = self.process.lock().unwrap();
+        if guard.is_some() {
+            return Ok(());
+        }
+
+        let binary_path = Self::find_binary_path()?;
+        let mut process = SidecarProcess::spawn(Some(binary_path))?;
+
+        // Wait for ready signal
+        process.wait_for_ready()?;
+
+        *guard = Some(process);
+        Ok(())
+    }
+
+    /// Execute a skill via agent runtime
+    pub fn execute_skill(&self, skill_id: &str, input: Option<&str>, variables: Option<&HashMap<String, serde_json::Value>>) -> Result<String, String> {
+        self.ensure_running()?;
+
+        let mut guard = self.process.lock().unwrap();
+        let process = guard.as_mut().unwrap();
+
+        let mut params = json!({
+            "skillId": skill_id,
+        });
+        if let Some(i) = input {
+            params["input"] = json!(i);
+        }
+        if let Some(v) = variables {
+            params["variables"] = json!(v);
+        }
+
+        let request = AgentRequest {
+            jsonrpc: "2.0".to_string(),
+            method: "execute_skill".to_string(),
+            params,
+            id: uuid::Uuid::new_v4().to_string(),
+        };
+
+        let response = process.send_request(&request)?;
+
+        if let Some(error) = response.error {
+            return Err(format!("{}: {}", error.code, error.message));
+        }
+
+        let result = response.result
+            .and_then(|r| r.get("result").and_then(|r| r.as_str()).map(|s| s.to_string()))
+            .unwrap_or_else(|| "No result".to_string());
+
+        Ok(result)
+    }
+
+    /// Execute a recipe via agent runtime
+    pub fn execute_recipe(&self, recipe_id: &str, variables: Option<&HashMap<String, serde_json::Value>>) -> Result<String, String> {
+        self.ensure_running()?;
+
+        let mut guard = self.process.lock().unwrap();
+        let process = guard.as_mut().unwrap();
+
+        let mut params = json!({
+            "recipeId": recipe_id,
+        });
+        if let Some(v) = variables {
+            params["variables"] = json!(v);
+        }
+
+        let request = AgentRequest {
+            jsonrpc: "2.0".to_string(),
+            method: "execute_recipe".to_string(),
+            params,
+            id: uuid::Uuid::new_v4().to_string(),
+        };
+
+        let response = process.send_request(&request)?;
+
+        if let Some(error) = response.error {
+            return Err(format!("{}: {}", error.code, error.message));
+        }
+
+        let result = response.result
+            .and_then(|r| r.get("result").and_then(|r| r.as_str()).map(|s| s.to_string()))
+            .unwrap_or_else(|| "No result".to_string());
+
+        Ok(result)
+    }
+
+    /// Execute a prompt via agent runtime
+    pub fn execute_prompt(&self, prompt: &str, provider: Option<&str>) -> Result<String, String> {
+        self.ensure_running()?;
+
+        let mut guard = self.process.lock().unwrap();
+        let process = guard.as_mut().unwrap();
+
+        let mut params = json!({
+            "prompt": prompt,
+        });
+        if let Some(p) = provider {
+            params["provider"] = json!(p);
+        }
+
+        let request = AgentRequest {
+            jsonrpc: "2.0".to_string(),
+            method: "execute_prompt".to_string(),
+            params,
+            id: uuid::Uuid::new_v4().to_string(),
+        };
+
+        let response = process.send_request(&request)?;
+
+        if let Some(error) = response.error {
+            return Err(format!("{}: {}", error.code, error.message));
+        }
+
+        let result = response.result
+            .and_then(|r| r.get("result").and_then(|r| r.as_str()).map(|s| s.to_string()))
+            .unwrap_or_else(|| "No result".to_string());
+
+        Ok(result)
+    }
+}
+
+impl Default for AgentRuntimeClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Sidecar process wrapper (copied from sidecar.rs to avoid circular dependency)
+struct SidecarProcess {
+    child: Child,
+    stdin: ChildStdin,
+    stdout: BufReader<ChildStdout>,
+}
+
+/// Agent request for JSON-RPC
+#[derive(Debug, Serialize, Deserialize)]
+struct AgentRequest {
+    pub jsonrpc: String,
+    pub method: String,
+    pub params: serde_json::Value,
+    pub id: String,
+}
+
+/// Agent response for JSON-RPC
+#[derive(Debug, Serialize, Deserialize)]
+struct AgentResponse {
+    pub jsonrpc: String,
+    pub result: Option<serde_json::Value>,
+    pub error: Option<AgentError>,
+    pub id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct AgentError {
+    pub code: i32,
+    pub message: String,
+}
+
+impl SidecarProcess {
+    fn spawn(binary_path: Option<PathBuf>) -> Result<Self, String> {
+        let bin_path = binary_path
+            .or_else(|| {
+                let exe_path = std::env::current_exe().ok()?;
+                exe_path
+                    .parent()
+                    .and_then(|p| p.parent())
+                    .map(|p| p.join("binaries").join("agent-runtime"))
+                    .filter(|p| p.exists())
+            })
+            .ok_or_else(|| "Failed to determine binaries path".to_string())?;
+
+        if !bin_path.exists() {
+            return Err(format!("Agent runtime binary not found at {:?}", bin_path));
+        }
+
+        let mut child = Command::new(&bin_path)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("Failed to spawn agent runtime: {}", e))?;
+
+        let stdin = child.stdin.take().ok_or("Failed to get stdin")?;
+        let stdout = child.stdout.take().ok_or("Failed to get stdout")?;
+
+        Ok(Self {
+            child,
+            stdin,
+            stdout: BufReader::new(stdout),
+        })
+    }
+
+    fn send_request(&mut self, request: &AgentRequest) -> Result<AgentResponse, String> {
+        let request_str = serde_json::to_string(request)
+            .map_err(|e| format!("Failed to serialize request: {}", e))?;
+
+        writeln!(self.stdin, "{}", request_str)
+            .map_err(|e| format!("Failed to write to stdin: {}", e))?;
+
+        self.stdin.flush()
+            .map_err(|e| format!("Failed to flush stdin: {}", e))?;
+
+        let mut response_str = String::new();
+        self.stdout.read_line(&mut response_str)
+            .map_err(|e| format!("Failed to read from stdout: {}", e))?;
+
+        serde_json::from_str(&response_str)
+            .map_err(|e| format!("Failed to parse response: {}", e))
+    }
+
+    fn wait_for_ready(&mut self) -> Result<(), String> {
+        let mut ready_line = String::new();
+        self.stdout.read_line(&mut ready_line)
+            .map_err(|e| format!("Failed to read ready signal: {}", e))?;
+
+        let response: AgentResponse = serde_json::from_str(&ready_line)
+            .map_err(|e| format!("Failed to parse ready signal: {}", e))?;
+
+        if response.result.as_ref()
+            .and_then(|r| r.get("status"))
+            .and_then(|s| s.as_str())
+            != Some("ready") {
+            return Err("Sidecar not ready".to_string());
+        }
+
+        Ok(())
+    }
+}
+
+impl Drop for SidecarProcess {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
     }
 }
 

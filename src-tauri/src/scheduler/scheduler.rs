@@ -44,6 +44,7 @@ impl JobScheduler {
             db_path: std::path::PathBuf::from(&config.db_path),
             agent_endpoint: None,
             timeout_secs: 300,
+            agent_binary_path: None,
         };
 
         let executor = Arc::new(JobExecutor::new(exec_context));
