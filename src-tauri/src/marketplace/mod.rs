@@ -4,6 +4,9 @@ pub mod store;
 pub mod listing;
 pub mod install;
 
+#[cfg(test)]
+mod tests;
+
 pub use store::*;
 pub use listing::*;
 pub use install::*;
