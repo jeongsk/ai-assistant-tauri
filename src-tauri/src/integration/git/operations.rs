@@ -88,10 +88,11 @@ impl GitOperations {
         let (staged, unstaged, untracked, conflicted) = statuses.iter().fold(
             (0, 0, 0, 0),
             |(s, u, ut, c), entry| {
-                let s = s + if entry.index_is_new() { 1 } else { 0 };
-                let u = u + if entry.worktree_is_new() { 1 } else { 0 };
-                let ut = ut + if entry.status() == git2::Status::WT_NEW { 1 } else { 0 };
-                let c = c + if entry.is_conflicted() { 1 } else { 0 };
+                let status = entry.status();
+                let s = s + if status.contains(git2::Status::INDEX_NEW) || status.contains(git2::Status::INDEX_MODIFIED) { 1 } else { 0 };
+                let u = u + if status.contains(git2::Status::WT_NEW) || status.contains(git2::Status::WT_MODIFIED) { 1 } else { 0 };
+                let ut = ut + if status.contains(git2::Status::WT_NEW) { 1 } else { 0 };
+                let c = c + if status.contains(git2::Status::CONFLICTED) { 1 } else { 0 };
                 (s, u, ut, c)
             },
         );
@@ -121,7 +122,8 @@ impl GitOperations {
             .map_err(|e| format!("Failed to get index: {}", e))?;
 
         // Stage all changes
-        index.add_all(std::path::Path::new("."), None)
+        let pathspec = ".";
+        index.update_all(&[pathspec], None)
             .map_err(|e| format!("Failed to stage files: {}", e))?;
 
         let tree_id = index.write_tree()
@@ -133,12 +135,19 @@ impl GitOperations {
         let sig = repo.signature()
             .map_err(|e| format!("Failed to get signature: {}", e))?;
 
+        // Get parent commit if exists
+        let parent_commit = repo.head()
+            .ok()
+            .and_then(|h| h.peel_to_commit().ok());
+
+        // git2 0.19 requires 6 arguments: update_ref, author, committer, message, tree, parents
         let oid = repo.commit(
             Some("HEAD"),
             &sig,
+            &sig,
             message,
             &tree,
-            &[],
+            parent_commit.as_ref().into_iter().collect::<Vec<_>>().as_slice(),
         )
             .map_err(|e| format!("Failed to commit: {}", e))?;
 
@@ -161,34 +170,169 @@ impl GitOperations {
             .map_err(|e| format!("Failed to open repo: {}", e))?;
 
         // Find the remote
-        let repo_remote = repo.find_remote(remote)
+        let mut repo_remote = repo.find_remote(remote)
             .map_err(|_| format!("Remote '{}' not found", remote))?;
 
-        // Push would require authentication callback
-        // For now, return a placeholder
-        Ok(GitOperationResult {
-            success: true,
-            result: Some(format!("Push to {}/{} (placeholder)", remote, branch)),
-            error: None,
-            execution_time_ms: start.elapsed().as_millis() as u64,
-        })
+        // Get the refspec for the branch
+        let refspec = format!("refs/heads/{}:refs/heads/{}", branch, branch);
+
+        // Configure authentication callbacks
+        let config = repo.config().ok();
+        let mut callbacks = git2::RemoteCallbacks::new();
+
+        // Try to use credentials from config or ssh agent
+        callbacks.credentials(|url, username_from_url, _allowed| {
+            git2::Cred::ssh_key_from_agent(
+                username_from_url.unwrap_or("git"),
+            )
+        });
+
+        // Also try helper-based authentication
+        callbacks.credentials(|_url, username_from_url, allowed| {
+            if allowed.contains(git2::CredentialType::SSH_KEY) {
+                git2::Cred::ssh_key_from_agent(
+                    username_from_url.unwrap_or("git"),
+                )
+            } else if allowed.contains(git2::CredentialType::USER_PASS_PLAINTEXT) {
+                // For HTTPS, try credential helper
+                git2::Cred::default()
+            } else {
+                Err(git2::Error::from_str("Unsupported authentication type"))
+            }
+        });
+
+        let mut push_options = git2::PushOptions::new();
+        push_options.remote_callbacks(callbacks);
+
+        // Push
+        match repo_remote.push(&[refspec.as_str()], Some(&mut push_options)) {
+            Ok(_) => Ok(GitOperationResult {
+                success: true,
+                result: Some(format!("Pushed to {}/{}", remote, branch)),
+                error: None,
+                execution_time_ms: start.elapsed().as_millis() as u64,
+            }),
+            Err(e) => Ok(GitOperationResult {
+                success: false,
+                result: None,
+                error: Some(format!("Push failed: {}", e)),
+                execution_time_ms: start.elapsed().as_millis() as u64,
+            }),
+        }
     }
 
-    /// Pull changes
+    /// Pull changes (simplified version - fetch only)
     #[cfg(feature = "git")]
     pub fn pull(&self, remote: &str, branch: &str) -> Result<GitOperationResult, String> {
         use std::time::Instant;
 
         let start = Instant::now();
 
-        // Pull would require authentication callback
-        // For now, return a placeholder
-        Ok(GitOperationResult {
-            success: true,
-            result: Some(format!("Pull from {}/{} (placeholder)", remote, branch)),
-            error: None,
-            execution_time_ms: start.elapsed().as_millis() as u64,
-        })
+        let repo = git2::Repository::open(&self.repo_path)
+            .map_err(|e| format!("Failed to open repo: {}", e))?;
+
+        // Find the remote
+        let mut repo_remote = repo.find_remote(remote)
+            .map_err(|_| format!("Remote '{}' not found", remote))?;
+
+        // Configure authentication callbacks
+        let mut callbacks = git2::RemoteCallbacks::new();
+
+        callbacks.credentials(|_url, username_from_url, allowed| {
+            if allowed.contains(git2::CredentialType::SSH_KEY) {
+                git2::Cred::ssh_key_from_agent(
+                    username_from_url.unwrap_or("git"),
+                )
+            } else if allowed.contains(git2::CredentialType::USER_PASS_PLAINTEXT) {
+                git2::Cred::default()
+            } else {
+                Err(git2::Error::from_str("Unsupported authentication type"))
+            }
+        });
+
+        let mut fetch_options = git2::FetchOptions::new();
+        fetch_options.remote_callbacks(callbacks);
+
+        // Fetch from remote
+        let refspec = format!("refs/heads/{}:refs/heads/{}", branch, branch);
+        match repo_remote.fetch(&[&refspec], Some(&mut fetch_options), None) {
+            Ok(_) => {
+                // Try to fast-forward merge
+                let fetch_commit = repo.find_reference("FETCH_HEAD")
+                    .and_then(|r| r.peel_to_commit());
+
+                let head_commit = repo.head()
+                    .ok()
+                    .and_then(|h| h.peel_to_commit().ok());
+
+                match (head_commit, fetch_commit) {
+                    (Some(head), Ok(fetch)) => {
+                        // Try fast-forward merge
+                        let annotated_fetch = repo.find_annotated_commit(fetch.id())
+                            .map_err(|e| format!("Failed to annotate commit: {}", e))?;
+
+                        match repo.merge_analysis(&[&annotated_fetch]) {
+                            Ok((analysis, _)) => {
+                                if analysis.is_up_to_date() {
+                                    return Ok(GitOperationResult {
+                                        success: true,
+                                        result: Some(format!("Already up to date with {}/{}", remote, branch)),
+                                        error: None,
+                                        execution_time_ms: start.elapsed().as_millis() as u64,
+                                    });
+                                }
+
+                                if analysis.is_fast_forward() {
+                                    let refname = format!("refs/heads/{}", branch);
+                                    repo.reference(
+                                        &refname,
+                                        fetch.id(),
+                                        true,
+                                        "Fast-forward pull",
+                                    )
+                                        .map_err(|e| format!("Failed to update reference: {}", e))?;
+
+                                    repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
+                                        .map_err(|e| format!("Failed to checkout: {}", e))?;
+
+                                    Ok(GitOperationResult {
+                                        success: true,
+                                        result: Some(format!("Fast-forward pull from {}/{}", remote, branch)),
+                                        error: None,
+                                        execution_time_ms: start.elapsed().as_millis() as u64,
+                                    })
+                                } else {
+                                    Ok(GitOperationResult {
+                                        success: false,
+                                        result: Some(format!("Fetched from {}/{} (merge required, not implemented)", remote, branch)),
+                                        error: None,
+                                        execution_time_ms: start.elapsed().as_millis() as u64,
+                                    })
+                                }
+                            }
+                            Err(e) => Ok(GitOperationResult {
+                                success: false,
+                                result: None,
+                                error: Some(format!("Merge analysis failed: {}", e)),
+                                execution_time_ms: start.elapsed().as_millis() as u64,
+                            }),
+                        }
+                    }
+                    _ => Ok(GitOperationResult {
+                        success: true,
+                        result: Some(format!("Fetched from {}/{}", remote, branch)),
+                        error: None,
+                        execution_time_ms: start.elapsed().as_millis() as u64,
+                    }),
+                }
+            }
+            Err(e) => Ok(GitOperationResult {
+                success: false,
+                result: None,
+                error: Some(format!("Fetch failed: {}", e)),
+                execution_time_ms: start.elapsed().as_millis() as u64,
+            }),
+        }
     }
 }
 

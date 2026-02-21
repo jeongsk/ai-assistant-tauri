@@ -5,10 +5,14 @@
 use crate::plugins::{
     api::{handle_request, PluginRequest, PluginResponse},
     sandbox::{PluginSandbox, SandboxAction, SandboxManager},
+    runtime::{WasmRuntime, WasmExecutionResult, WasmRuntimeConfig},
+    wasi_host::{WasiHost, create_wasi_context_with_dir},
+    monitor::{ResourceMonitor, MetricUpdate},
     PluginContext, PluginManifest, PluginPermission, ResourceLimits,
 };
 use serde_json::Value;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -29,6 +33,8 @@ pub struct ResourceUsage {
     pub cpu_percent: f64,
     pub execution_time_ms: u64,
     pub syscall_count: u64,
+    #[cfg(feature = "wasm")]
+    pub fuel_consumed: u64,
 }
 
 impl Default for ResourceUsage {
@@ -38,6 +44,8 @@ impl Default for ResourceUsage {
             cpu_percent: 0.0,
             execution_time_ms: 0,
             syscall_count: 0,
+            #[cfg(feature = "wasm")]
+            fuel_consumed: 0,
         }
     }
 }
@@ -48,6 +56,11 @@ pub struct RunningPlugin {
     pub manifest: PluginManifest,
     pub started_at: Instant,
     pub state: PluginInstanceState,
+    /// WASM instance ID (when wasm feature is enabled)
+    #[cfg(feature = "wasm")]
+    pub wasm_instance_id: Option<String>,
+    /// Plugin working directory
+    pub work_dir: PathBuf,
 }
 
 /// Plugin instance state
@@ -65,6 +78,14 @@ pub struct PluginExecutor {
     running_plugins: Arc<Mutex<HashMap<String, RunningPlugin>>>,
     sandbox_manager: Arc<Mutex<SandboxManager>>,
     ipc: Arc<Mutex<PluginIpc>>,
+    /// WASM runtime
+    wasm_runtime: Arc<Mutex<WasmRuntime>>,
+    /// WASI host
+    wasi_host: Arc<Mutex<WasiHost>>,
+    /// Resource monitor
+    monitor: Arc<Mutex<ResourceMonitor>>,
+    /// Plugins directory
+    plugins_dir: PathBuf,
 }
 
 impl PluginExecutor {
@@ -74,6 +95,23 @@ impl PluginExecutor {
             running_plugins: Arc::new(Mutex::new(HashMap::new())),
             sandbox_manager: Arc::new(Mutex::new(SandboxManager::new())),
             ipc: Arc::new(Mutex::new(PluginIpc::new())),
+            wasm_runtime: Arc::new(Mutex::new(WasmRuntime::new(WasmRuntimeConfig::default()))),
+            wasi_host: Arc::new(Mutex::new(WasiHost::new())),
+            monitor: Arc::new(Mutex::new(ResourceMonitor::new())),
+            plugins_dir: PathBuf::from("plugins"),
+        }
+    }
+
+    /// Create a new plugin executor with custom plugins directory
+    pub fn with_plugins_dir(plugins_dir: PathBuf) -> Self {
+        Self {
+            running_plugins: Arc::new(Mutex::new(HashMap::new())),
+            sandbox_manager: Arc::new(Mutex::new(SandboxManager::new())),
+            ipc: Arc::new(Mutex::new(PluginIpc::new())),
+            wasm_runtime: Arc::new(Mutex::new(WasmRuntime::new(WasmRuntimeConfig::default()))),
+            wasi_host: Arc::new(Mutex::new(WasiHost::new())),
+            monitor: Arc::new(Mutex::new(ResourceMonitor::new())),
+            plugins_dir,
         }
     }
 
@@ -85,6 +123,11 @@ impl PluginExecutor {
         if self.is_running(&plugin_id) {
             return Err(format!("Plugin {} is already running", plugin_id));
         }
+
+        // Create working directory
+        let work_dir = self.plugins_dir.join(&plugin_id);
+        std::fs::create_dir_all(&work_dir)
+            .map_err(|e| format!("Failed to create work directory: {}", e))?;
 
         // Create sandbox context
         let context = PluginContext {
@@ -98,12 +141,49 @@ impl PluginExecutor {
         sandbox_manager.create_sandbox(&plugin_id, context);
         drop(sandbox_manager);
 
+        // Load WASM module if wasm feature is enabled
+        #[cfg(feature = "wasm")]
+        let wasm_instance_id = {
+            let wasm_path = PathBuf::from(&manifest.main);
+            if wasm_path.exists() {
+                // Read WASM bytes
+                let wasm_bytes = std::fs::read(&wasm_path)
+                    .map_err(|e| format!("Failed to read WASM file: {}", e))?;
+
+                // Load module
+                let mut runtime = self.wasm_runtime.lock().unwrap();
+                let module_hash = runtime.load_module(wasm_bytes)
+                    .map_err(|e| format!("Failed to load WASM module: {}", e))?;
+
+                // Create WASI context with working directory
+                let wasi_ctx = create_wasi_context_with_dir(&plugin_id, work_dir.to_str().unwrap())?;
+
+                // Instantiate
+                let instance_id = runtime.instantiate(&module_hash, Some(wasi_ctx))
+                    .map_err(|e| format!("Failed to instantiate WASM: {}", e))?;
+
+                // Start monitoring
+                let mut monitor = self.monitor.lock().unwrap();
+                monitor.start_monitoring(instance_id.clone());
+
+                Some(instance_id)
+            } else {
+                None
+            }
+        };
+
+        #[cfg(not(feature = "wasm"))]
+        let wasm_instance_id: Option<String> = None;
+
         // Create running instance
         let running = RunningPlugin {
             id: plugin_id.clone(),
             manifest: manifest.clone(),
             started_at: Instant::now(),
             state: PluginInstanceState::Running,
+            #[cfg(feature = "wasm")]
+            wasm_instance_id,
+            work_dir,
         };
 
         let mut plugins = self.running_plugins.lock().unwrap();
@@ -125,9 +205,24 @@ impl PluginExecutor {
         let plugin = plugins.remove(id)
             .ok_or_else(|| format!("Plugin {} not found", id))?;
 
+        // Stop monitoring
+        #[cfg(feature = "wasm")]
+        if let Some(instance_id) = plugin.wasm_instance_id {
+            let mut monitor = self.monitor.lock().unwrap();
+            monitor.stop_monitoring(&instance_id);
+
+            // Remove WASM instance
+            let mut runtime = self.wasm_runtime.lock().unwrap();
+            let _ = runtime.remove_instance(&instance_id);
+        }
+
         // Destroy sandbox
         let mut sandbox_manager = self.sandbox_manager.lock().unwrap();
         sandbox_manager.destroy_sandbox(id);
+
+        // Remove WASI context
+        let mut wasi_host = self.wasi_host.lock().unwrap();
+        wasi_host.remove_context(id);
 
         tracing::info!("Plugin {} stopped", id);
         Ok(())
@@ -209,6 +304,8 @@ impl PluginExecutor {
         // Execute the action
         let result = match action {
             "api.call" => self.execute_api_call(plugin_id, params).await,
+            #[cfg(feature = "wasm")]
+            "wasm.call" => self.execute_wasm_call(plugin_id, params).await,
             _ => ExecutionResult {
                 success: false,
                 result: None,
@@ -254,6 +351,11 @@ impl PluginExecutor {
         }
         drop(sandbox_manager);
 
+        // Update metrics
+        let mut monitor = self.monitor.lock().unwrap();
+        monitor.update_metrics(plugin_id, MetricUpdate::Syscall);
+        drop(monitor);
+
         // Handle request
         let response = handle_request(request);
 
@@ -262,11 +364,79 @@ impl PluginExecutor {
             result: response.result,
             error: response.error,
             execution_time_ms: start.elapsed().as_millis() as u64,
+            resource_usage: self.get_resource_usage_internal(plugin_id),
+        }
+    }
+
+    /// Execute a WASM function call
+    #[cfg(feature = "wasm")]
+    async fn execute_wasm_call(&mut self, plugin_id: &str, params: Value) -> ExecutionResult {
+        let start = Instant::now();
+
+        // Get WASM instance ID
+        let instance_id = {
+            let plugins = self.running_plugins.lock().unwrap();
+            plugins.get(plugin_id)
+                .and_then(|p| p.wasm_instance_id.clone())
+                .ok_or_else(|| format!("No WASM instance for plugin {}", plugin_id))
+        };
+
+        let instance_id = match instance_id {
+            Ok(id) => id,
+            Err(e) => {
+                return ExecutionResult {
+                    success: false,
+                    result: None,
+                    error: Some(e),
+                    execution_time_ms: 0,
+                    resource_usage: ResourceUsage::default(),
+                };
+            }
+        };
+
+        // Parse function name and args
+        let function_name = params.get("function")
+            .and_then(|v| v.as_str())
+            .unwrap_or("call");
+        let args = params.get("args")
+            .and_then(|v| v.as_array())
+            .map(|v| v.clone())
+            .unwrap_or_default();
+
+        // Call WASM function
+        let mut runtime = self.wasm_runtime.lock().unwrap();
+        let wasm_result = runtime.call_function(&instance_id, function_name,
+            args.into_iter().collect());
+
+        let wasm_result = match wasm_result {
+            Ok(r) => r,
+            Err(e) => {
+                return ExecutionResult {
+                    success: false,
+                    result: None,
+                    error: Some(e),
+                    execution_time_ms: start.elapsed().as_millis() as u64,
+                    resource_usage: ResourceUsage::default(),
+                };
+            }
+        };
+
+        // Update resource monitor
+        let mut monitor = self.monitor.lock().unwrap();
+        monitor.update_from_wasm(&instance_id, wasm_result.fuel_consumed,
+            wasm_result.execution_time_ms as u64);
+
+        ExecutionResult {
+            success: wasm_result.success,
+            result: wasm_result.result,
+            error: wasm_result.error,
+            execution_time_ms: wasm_result.execution_time_ms,
             resource_usage: ResourceUsage {
                 memory_mb: 0.0,
                 cpu_percent: 0.0,
-                execution_time_ms: start.elapsed().as_millis() as u64,
+                execution_time_ms: wasm_result.execution_time_ms,
                 syscall_count: 1,
+                fuel_consumed: wasm_result.fuel_consumed,
             },
         }
     }
@@ -276,7 +446,6 @@ impl PluginExecutor {
         // Parse method to determine permission type
         if method.starts_with("fs.") {
             // File system methods need file permission
-            // For now, allow if any file permission exists
             for perm in &sandbox.context().permissions {
                 if matches!(perm, PluginPermission::FileSystem { .. }) {
                     return Ok(());
@@ -319,6 +488,22 @@ impl PluginExecutor {
         Ok(())
     }
 
+    fn get_resource_usage_internal(&self, plugin_id: &str) -> ResourceUsage {
+        let monitor = self.monitor.lock().unwrap();
+        if let Some(metrics) = monitor.get_metrics(plugin_id) {
+            ResourceUsage {
+                memory_mb: metrics.memory_bytes as f64 / (1024.0 * 1024.0),
+                cpu_percent: 0.0,
+                execution_time_ms: metrics.cpu_time_ms,
+                syscall_count: metrics.syscall_count,
+                #[cfg(feature = "wasm")]
+                fuel_consumed: metrics.fuel_consumed,
+            }
+        } else {
+            ResourceUsage::default()
+        }
+    }
+
     /// Check if a plugin is running
     pub fn is_running(&self, id: &str) -> bool {
         let plugins = self.running_plugins.lock().unwrap();
@@ -337,20 +522,31 @@ impl PluginExecutor {
     /// Get resource usage for a plugin
     pub fn get_resource_usage(&self, id: &str) -> Option<ResourceUsage> {
         let plugins = self.running_plugins.lock().unwrap();
-        plugins.get(id).map(|p| {
-            let elapsed = p.started_at.elapsed();
-            ResourceUsage {
-                memory_mb: 0.0,
-                cpu_percent: 0.0,
-                execution_time_ms: elapsed.as_millis() as u64,
-                syscall_count: 0,
-            }
-        })
+        if plugins.get(id).is_some() {
+            Some(self.get_resource_usage_internal(id))
+        } else {
+            None
+        }
     }
 
     /// Get IPC manager
     pub fn get_ipc(&self) -> Arc<Mutex<PluginIpc>> {
         self.ipc.clone()
+    }
+
+    /// Get resource monitor
+    pub fn get_monitor(&self) -> Arc<Mutex<ResourceMonitor>> {
+        self.monitor.clone()
+    }
+
+    /// Get WASM runtime
+    pub fn get_wasm_runtime(&self) -> Arc<Mutex<WasmRuntime>> {
+        self.wasm_runtime.clone()
+    }
+
+    /// Get WASI host
+    pub fn get_wasi_host(&self) -> Arc<Mutex<WasiHost>> {
+        self.wasi_host.clone()
     }
 }
 
@@ -384,7 +580,6 @@ impl PluginIpc {
 
     /// Send a message from one plugin to another
     pub fn send_message(&mut self, message: PluginMessage) -> Result<(), String> {
-        // Validate both plugins exist (in real implementation)
         let to = message.to.clone();
         self.message_queue
             .entry(to)
@@ -447,5 +642,21 @@ mod tests {
         let messages = ipc.get_messages("plugin2");
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].from, "plugin1");
+    }
+
+    #[test]
+    fn test_executor_with_plugins_dir() {
+        let executor = PluginExecutor::with_plugins_dir(PathBuf::from("/tmp/plugins"));
+        // Verify executor is created successfully
+        let _ = executor;
+    }
+
+    #[test]
+    fn test_plugin_instance_state() {
+        let state = PluginInstanceState::Starting;
+        assert_eq!(state, PluginInstanceState::Starting);
+
+        let error_state = PluginInstanceState::Error("test error".to_string());
+        assert!(matches!(error_state, PluginInstanceState::Error(_)));
     }
 }

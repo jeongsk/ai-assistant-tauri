@@ -6,6 +6,9 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+#[cfg(feature = "cloud")]
+use aws_sdk_s3 as s3;
+
 /// S3 operation result
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct S3OperationResult {
@@ -38,11 +41,54 @@ pub struct S3Manager {
 }
 
 /// Wrapper that works with and without the cloud feature
+#[cfg(feature = "cloud")]
 struct S3ClientWrapper {
     bucket: String,
     region: Option<String>,
+    client: Option<Arc<s3::Client>>,
+}
+
+/// Wrapper for non-cloud builds
+#[cfg(not(feature = "cloud"))]
+struct S3ClientWrapper {
+    bucket: String,
+    region: Option<String>,
+}
+
+#[cfg(feature = "cloud")]
+impl S3ClientWrapper {
+    /// Get or initialize the S3 client
     #[cfg(feature = "cloud")]
-    client: Option<aws_sdk_s3::Client>,
+    async fn get_or_init_client(&self) -> Result<Arc<s3::Client>, String> {
+        if let Some(ref client) = self.client {
+            return Ok(client.clone());
+        }
+
+        // Initialize AWS config
+        let region_str = self.region.as_deref().unwrap_or("us-east-1");
+        let region = s3::config::Region::new(region_str);
+
+        let config_loader = aws_config::defaults(aws_config::BehaviorVersion::latest())
+            .region(region)
+            .load()
+            .await;
+
+        let client = Arc::new(s3::Client::new(&config_loader));
+        Ok(client)
+    }
+
+    /// Get bucket name
+    fn bucket(&self) -> &str {
+        &self.bucket
+    }
+}
+
+#[cfg(not(feature = "cloud"))]
+impl S3ClientWrapper {
+    /// Get bucket name
+    fn bucket(&self) -> &str {
+        &self.bucket
+    }
 }
 
 impl S3Manager {
@@ -54,6 +100,34 @@ impl S3Manager {
     }
 
     /// Add an S3 client configuration
+    #[cfg(feature = "cloud")]
+    pub async fn add_client(
+        &self,
+        name: String,
+        bucket: String,
+        region: Option<String>,
+        access_key_id: Option<String>,
+        secret_access_key: Option<String>,
+    ) -> Result<(), String> {
+        // If credentials provided, set them as environment variables for the SDK
+        if let (Some(akid), Some(sak)) = (access_key_id, secret_access_key) {
+            std::env::set_var("AWS_ACCESS_KEY_ID", akid);
+            std::env::set_var("AWS_SECRET_ACCESS_KEY", sak);
+        }
+
+        let wrapper = S3ClientWrapper {
+            bucket,
+            region,
+            client: None, // Will be initialized on first use
+        };
+
+        let mut clients = self.clients.write().await;
+        clients.insert(name, Arc::new(wrapper));
+        Ok(())
+    }
+
+    /// Add an S3 client configuration (non-cloud feature)
+    #[cfg(not(feature = "cloud"))]
     pub async fn add_client(
         &self,
         name: String,
@@ -65,8 +139,6 @@ impl S3Manager {
         let wrapper = S3ClientWrapper {
             bucket,
             region,
-            #[cfg(feature = "cloud")]
-            client: None, // Will be initialized on first use
         };
 
         let mut clients = self.clients.write().await;
@@ -89,21 +161,63 @@ impl S3Manager {
         let clients = self.clients.read().await;
         let wrapper = clients.get(name);
 
-        if wrapper.is_none() {
-            return S3OperationResult {
+        let wrapper = match wrapper {
+            Some(w) => w,
+            None => {
+                return S3OperationResult {
+                    success: false,
+                    result: None,
+                    error: Some(format!("S3 client '{}' not found", name)),
+                    execution_time_ms: start.elapsed().as_millis() as u64,
+                };
+            }
+        };
+
+        let client = match wrapper.get_or_init_client().await {
+            Ok(c) => c,
+            Err(e) => {
+                return S3OperationResult {
+                    success: false,
+                    result: None,
+                    error: Some(format!("Failed to initialize S3 client: {}", e)),
+                    execution_time_ms: start.elapsed().as_millis() as u64,
+                };
+            }
+        };
+
+        let bucket = wrapper.bucket();
+
+        // Create put request using aws_sdk_s3 1.x API
+        let put_request = aws_sdk_s3::types::PutObjectRequest::builder()
+            .bucket(bucket)
+            .key(key)
+            .body(aws_sdk_s3::primitives::ByteStream::from(data))
+            .build()
+            .map_err(|e| format!("Failed to build request: {}", e))?;
+
+        // Execute upload
+        match client.put_object(put_request).await {
+            Ok(output) => {
+                let version_id = output.version_id().map(|v| v.as_str().to_string());
+                let result_str = if let Some(v) = version_id {
+                    format!("Uploaded {} to {} (version: {})", key, bucket, v)
+                } else {
+                    format!("Uploaded {} to {}", key, bucket)
+                };
+
+                S3OperationResult {
+                    success: true,
+                    result: Some(result_str),
+                    error: None,
+                    execution_time_ms: start.elapsed().as_millis() as u64,
+                }
+            }
+            Err(e) => S3OperationResult {
                 success: false,
                 result: None,
-                error: Some(format!("S3 client '{}' not found", name)),
+                error: Some(format!("Upload failed: {}", e)),
                 execution_time_ms: start.elapsed().as_millis() as u64,
-            };
-        }
-
-        // Placeholder for actual S3 upload
-        S3OperationResult {
-            success: true,
-            result: Some(format!("Uploaded {} to {}", key, name)),
-            error: None,
-            execution_time_ms: start.elapsed().as_millis() as u64,
+            },
         }
     }
 
@@ -117,21 +231,67 @@ impl S3Manager {
         let clients = self.clients.read().await;
         let wrapper = clients.get(name);
 
-        if wrapper.is_none() {
-            return S3OperationResult {
+        let wrapper = match wrapper {
+            Some(w) => w,
+            None => {
+                return S3OperationResult {
+                    success: false,
+                    result: None,
+                    error: Some(format!("S3 client '{}' not found", name)),
+                    execution_time_ms: start.elapsed().as_millis() as u64,
+                };
+            }
+        };
+
+        let client = match wrapper.get_or_init_client().await {
+            Ok(c) => c,
+            Err(e) => {
+                return S3OperationResult {
+                    success: false,
+                    result: None,
+                    error: Some(format!("Failed to initialize S3 client: {}", e)),
+                    execution_time_ms: start.elapsed().as_millis() as u64,
+                };
+            }
+        };
+
+        let bucket = wrapper.bucket();
+
+        // Create get request using aws_sdk_s3 1.x API
+        let get_request = aws_sdk_s3::types::GetObjectRequest::builder()
+            .bucket(bucket)
+            .key(key)
+            .build()
+            .map_err(|e| format!("Failed to build request: {}", e))?;
+
+        // Execute download
+        match client.get_object(get_request).await {
+            Ok(output) => {
+                // Try to collect the body
+                match output.body.collect().await {
+                    Ok(data) => {
+                        let bytes = data.into_bytes().to_vec();
+                        S3OperationResult {
+                            success: true,
+                            result: Some(format!("Downloaded {} bytes from {}", bytes.len(), key)),
+                            error: None,
+                            execution_time_ms: start.elapsed().as_millis() as u64,
+                        }
+                    }
+                    Err(e) => S3OperationResult {
+                        success: false,
+                        result: None,
+                        error: Some(format!("Failed to read response body: {}", e)),
+                        execution_time_ms: start.elapsed().as_millis() as u64,
+                    },
+                }
+            }
+            Err(e) => S3OperationResult {
                 success: false,
                 result: None,
-                error: Some(format!("S3 client '{}' not found", name)),
+                error: Some(format!("Download failed: {}", e)),
                 execution_time_ms: start.elapsed().as_millis() as u64,
-            };
-        }
-
-        // Placeholder for actual S3 download
-        S3OperationResult {
-            success: true,
-            result: Some(format!("Downloaded {} from {}", key, name)),
-            error: None,
-            execution_time_ms: start.elapsed().as_millis() as u64,
+            },
         }
     }
 
@@ -142,14 +302,39 @@ impl S3Manager {
         let wrapper = clients.get(name)
             .ok_or_else(|| format!("S3 client '{}' not found", name))?;
 
-        // Placeholder - would use actual S3 ListObjectsV2
-        Ok(vec![S3Object {
-            key: prefix.unwrap_or("example.txt").to_string(),
-            size: 1024,
-            last_modified: chrono::Utc::now().to_rfc3339(),
-            etag: "\"abc123\"".to_string(),
-            storage_class: Some("STANDARD".to_string()),
-        }])
+        let client = wrapper.get_or_init_client().await?;
+        let bucket = wrapper.bucket();
+
+        let mut list_request_builder = aws_sdk_s3::types::ListObjectsV2Request::builder()
+            .bucket(bucket)
+            .max_keys(1000);
+
+        if let Some(p) = prefix {
+            list_request_builder = list_request_builder.prefix(p);
+        }
+
+        let list_request = list_request_builder.build()
+            .map_err(|e| format!("Failed to build list request: {}", e))?;
+
+        let response = client.list_objects_v2(list_request).await
+            .map_err(|e| format!("List objects failed: {}", e))?;
+
+        let objects = response.contents().unwrap_or_default();
+
+        let mut result = Vec::new();
+        for obj in objects {
+            result.push(S3Object {
+                key: obj.key().unwrap_or("").to_string(),
+                size: obj.size().unwrap_or(0),
+                last_modified: obj.last_modified()
+                    .map(|d| d.as_secs().to_string())
+                    .unwrap_or_default(),
+                etag: obj.e_tag().unwrap_or("").to_string(),
+                storage_class: obj.storage_class().map(|sc| sc.as_str().to_string()),
+            });
+        }
+
+        Ok(result)
     }
 
     /// Delete an object from S3
@@ -159,12 +344,56 @@ impl S3Manager {
 
         let start = Instant::now();
 
-        // Placeholder for actual S3 delete
-        S3OperationResult {
-            success: true,
-            result: Some(format!("Deleted {} from {}", key, name)),
-            error: None,
-            execution_time_ms: start.elapsed().as_millis() as u64,
+        let clients = self.clients.read().await;
+        let wrapper = clients.get(name);
+
+        let wrapper = match wrapper {
+            Some(w) => w,
+            None => {
+                return S3OperationResult {
+                    success: false,
+                    result: None,
+                    error: Some(format!("S3 client '{}' not found", name)),
+                    execution_time_ms: start.elapsed().as_millis() as u64,
+                };
+            }
+        };
+
+        let client = match wrapper.get_or_init_client().await {
+            Ok(c) => c,
+            Err(e) => {
+                return S3OperationResult {
+                    success: false,
+                    result: None,
+                    error: Some(format!("Failed to initialize S3 client: {}", e)),
+                    execution_time_ms: start.elapsed().as_millis() as u64,
+                };
+            }
+        };
+
+        let bucket = wrapper.bucket();
+
+        // Create delete request using aws_sdk_s3 1.x API
+        let delete_request = aws_sdk_s3::types::DeleteObjectRequest::builder()
+            .bucket(bucket)
+            .key(key)
+            .build()
+            .map_err(|e| format!("Failed to build request: {}", e))?;
+
+        // Execute delete
+        match client.delete_object(delete_request).await {
+            Ok(_) => S3OperationResult {
+                success: true,
+                result: Some(format!("Deleted {} from {}", key, bucket)),
+                error: None,
+                execution_time_ms: start.elapsed().as_millis() as u64,
+            },
+            Err(e) => S3OperationResult {
+                success: false,
+                result: None,
+                error: Some(format!("Delete failed: {}", e)),
+                execution_time_ms: start.elapsed().as_millis() as u64,
+            },
         }
     }
 

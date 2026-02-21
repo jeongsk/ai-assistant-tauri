@@ -2,6 +2,7 @@
 
 pub mod stt;
 pub mod tts;
+pub mod commands;
 
 
 use serde::{Deserialize, Serialize};

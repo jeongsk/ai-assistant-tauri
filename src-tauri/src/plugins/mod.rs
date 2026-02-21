@@ -4,6 +4,9 @@ pub mod loader;
 pub mod sandbox;
 pub mod api;
 pub mod executor;
+pub mod runtime;
+pub mod wasi_host;
+pub mod monitor;
 
 pub use executor::{
     ExecutionResult, PluginExecutor, PluginIpc, PluginMessage, ResourceUsage,

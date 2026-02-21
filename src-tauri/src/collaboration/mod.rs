@@ -2,6 +2,8 @@
 
 pub mod templates;
 pub mod export_mod;
+pub mod template_io;
+pub mod marketplace;
 
 use serde::{Deserialize, Serialize};
 
