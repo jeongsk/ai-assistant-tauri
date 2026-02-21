@@ -1,18 +1,21 @@
 import { useState, useEffect } from "react";
-import { Settings, FolderOpen, Clock, Menu, X, ShoppingBag } from "lucide-react";
+import { Settings, FolderOpen, Clock, Menu, X, ShoppingBag, Database, FileText } from "lucide-react";
 import { ChatView } from "./components/chat/ChatView";
 import { ConversationList } from "./components/chat/ConversationList";
 import { SettingsDialog } from "./components/settings/SettingsDialog";
 import { FileExplorer } from "./components/files/FileExplorer";
 import { TaskHistory } from "./components/history/TaskHistory";
 import { MarketplacePanel } from "./components/marketplace/MarketplacePanel";
+import { IntegrationsPanel } from "./components/integrations/IntegrationsPanel";
+import { TemplateLibrary } from "./components/collaboration/TemplateLibrary";
 import { useChatStore } from "./stores/chatStore";
 import { useSettingsStore } from "./stores/settingsStore";
+import { useCollaborationStore } from "./stores/collaborationStore";
 import "./App.css";
 
 function App() {
   const [showSettings, setShowSettings] = useState(false);
-  const [activeView, setActiveView] = useState<"chat" | "files" | "history" | "marketplace">(
+  const [activeView, setActiveView] = useState<"chat" | "files" | "history" | "marketplace" | "integrations" | "templates">(
     "chat",
   );
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -88,6 +91,18 @@ function App() {
             active={activeView === "marketplace"}
             onClick={() => setActiveView("marketplace")}
           />
+          <NavItem
+            icon={<Database className="w-4 h-4" />}
+            label="Integrations"
+            active={activeView === "integrations"}
+            onClick={() => setActiveView("integrations")}
+          />
+          <NavItem
+            icon={<FileText className="w-4 h-4" />}
+            label="Templates"
+            active={activeView === "templates"}
+            onClick={() => setActiveView("templates")}
+          />
         </nav>
 
         {/* Settings */}
@@ -118,6 +133,8 @@ function App() {
         {activeView === "files" && <FileExplorer />}
         {activeView === "history" && <HistoryView />}
         {activeView === "marketplace" && <MarketplacePanel />}
+        {activeView === "integrations" && <IntegrationsPanel />}
+        {activeView === "templates" && <TemplateLibraryPanel />}
       </main>
 
       {/* Settings Dialog */}
@@ -157,6 +174,21 @@ function HistoryView() {
   return (
     <div className="flex-1">
       <TaskHistory />
+    </div>
+  );
+}
+
+// Template Library Panel wrapper with data loading
+function TemplateLibraryPanel() {
+  const { loadTemplates } = useCollaborationStore();
+
+  useEffect(() => {
+    loadTemplates();
+  }, [loadTemplates]);
+
+  return (
+    <div className="flex-1 p-6">
+      <TemplateLibrary />
     </div>
   );
 }

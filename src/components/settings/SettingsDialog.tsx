@@ -2,7 +2,7 @@
  * Settings Dialog Component
  */
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Settings,
   X,
@@ -13,6 +13,10 @@ import {
   Check,
   AlertCircle,
   Globe,
+  Mic,
+  Plug,
+  FileText,
+  Database,
 } from "lucide-react";
 import {
   useSettingsStore,
@@ -21,6 +25,13 @@ import {
 } from "../../stores/settingsStore";
 import { useBrowserStore } from "../../stores/browserStore";
 import { validateFolderPath } from "../../services/tauri";
+import { VoiceSettings } from "../voice/VoiceSettings";
+import { PluginList } from "../plugins/PluginList";
+import { TemplateLibrary } from "../collaboration/TemplateLibrary";
+import { IntegrationsPanel } from "../integrations/IntegrationsPanel";
+import { useVoiceStore } from "../../stores/voiceStore";
+import { usePluginStore } from "../../stores/pluginStore";
+import { useCollaborationStore } from "../../stores/collaborationStore";
 
 interface SettingsDialogProps {
   isOpen: boolean;
@@ -29,7 +40,7 @@ interface SettingsDialogProps {
 
 export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
   const [activeTab, setActiveTab] = useState<
-    "providers" | "folders" | "browser" | "appearance"
+    "providers" | "folders" | "browser" | "appearance" | "voice" | "plugins" | "templates" | "integrations"
   >("providers");
 
   if (!isOpen) return null;
@@ -52,31 +63,59 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b">
+        <div className="flex border-b overflow-x-auto">
           <button
             onClick={() => setActiveTab("providers")}
-            className={`px-4 py-2 text-sm ${activeTab === "providers" ? "border-b-2 border-blue-500 text-blue-500" : "text-gray-600"}`}
+            className={`px-4 py-2 text-sm whitespace-nowrap ${activeTab === "providers" ? "border-b-2 border-blue-500 text-blue-500" : "text-gray-600"}`}
           >
             Providers
           </button>
           <button
             onClick={() => setActiveTab("folders")}
-            className={`px-4 py-2 text-sm ${activeTab === "folders" ? "border-b-2 border-blue-500 text-blue-500" : "text-gray-600"}`}
+            className={`px-4 py-2 text-sm whitespace-nowrap ${activeTab === "folders" ? "border-b-2 border-blue-500 text-blue-500" : "text-gray-600"}`}
           >
             Folders
           </button>
           <button
             onClick={() => setActiveTab("appearance")}
-            className={`px-4 py-2 text-sm ${activeTab === "appearance" ? "border-b-2 border-blue-500 text-blue-500" : "text-gray-600"}`}
+            className={`px-4 py-2 text-sm whitespace-nowrap ${activeTab === "appearance" ? "border-b-2 border-blue-500 text-blue-500" : "text-gray-600"}`}
           >
             Appearance
           </button>
           <button
             onClick={() => setActiveTab("browser")}
-            className={`px-4 py-2 text-sm flex items-center gap-1 ${activeTab === "browser" ? "border-b-2 border-blue-500 text-blue-500" : "text-gray-600"}`}
+            className={`px-4 py-2 text-sm flex items-center gap-1 whitespace-nowrap ${activeTab === "browser" ? "border-b-2 border-blue-500 text-blue-500" : "text-gray-600"}`}
           >
             <Globe className="w-4 h-4" />
             Browser
+          </button>
+          <button
+            onClick={() => setActiveTab("voice")}
+            className={`px-4 py-2 text-sm flex items-center gap-1 whitespace-nowrap ${activeTab === "voice" ? "border-b-2 border-blue-500 text-blue-500" : "text-gray-600"}`}
+          >
+            <Mic className="w-4 h-4" />
+            Voice
+          </button>
+          <button
+            onClick={() => setActiveTab("plugins")}
+            className={`px-4 py-2 text-sm flex items-center gap-1 whitespace-nowrap ${activeTab === "plugins" ? "border-b-2 border-blue-500 text-blue-500" : "text-gray-600"}`}
+          >
+            <Plug className="w-4 h-4" />
+            Plugins
+          </button>
+          <button
+            onClick={() => setActiveTab("templates")}
+            className={`px-4 py-2 text-sm flex items-center gap-1 whitespace-nowrap ${activeTab === "templates" ? "border-b-2 border-blue-500 text-blue-500" : "text-gray-600"}`}
+          >
+            <FileText className="w-4 h-4" />
+            Templates
+          </button>
+          <button
+            onClick={() => setActiveTab("integrations")}
+            className={`px-4 py-2 text-sm flex items-center gap-1 whitespace-nowrap ${activeTab === "integrations" ? "border-b-2 border-blue-500 text-blue-500" : "text-gray-600"}`}
+          >
+            <Database className="w-4 h-4" />
+            Integrations
           </button>
         </div>
 
@@ -86,6 +125,10 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
           {activeTab === "folders" && <FolderSettings />}
           {activeTab === "browser" && <BrowserSettings />}
           {activeTab === "appearance" && <AppearanceSettings />}
+          {activeTab === "voice" && <VoiceSettingsWrapper />}
+          {activeTab === "plugins" && <PluginsWrapper />}
+          {activeTab === "templates" && <TemplatesWrapper />}
+          {activeTab === "integrations" && <IntegrationsWrapper />}
         </div>
       </div>
     </div>
@@ -583,4 +626,42 @@ function BrowserSettings() {
       </button>
     </div>
   );
+}
+
+// ============================================================================
+// v0.4 Feature Wrappers
+// ============================================================================
+
+function VoiceSettingsWrapper() {
+  const { loadSettings } = useVoiceStore();
+
+  useEffect(() => {
+    loadSettings();
+  }, [loadSettings]);
+
+  return <VoiceSettings />;
+}
+
+function PluginsWrapper() {
+  const { loadPlugins } = usePluginStore();
+
+  useEffect(() => {
+    loadPlugins();
+  }, [loadPlugins]);
+
+  return <PluginList />;
+}
+
+function TemplatesWrapper() {
+  const { loadTemplates } = useCollaborationStore();
+
+  useEffect(() => {
+    loadTemplates();
+  }, [loadTemplates]);
+
+  return <TemplateLibrary />;
+}
+
+function IntegrationsWrapper() {
+  return <IntegrationsPanel />;
 }
