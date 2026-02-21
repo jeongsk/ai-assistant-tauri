@@ -10,6 +10,7 @@ mod tests;
 // Re-export commonly used types from submodules
 pub use store::MarketplaceStore;
 pub use install::MarketplaceInstaller;
+pub use listing::MarketplaceListing;
 
 
 use serde::{Deserialize, Serialize};
