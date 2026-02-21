@@ -1,6 +1,6 @@
 // Template Management
 
-use crate::collaboration::{Template, Visibility};
+use crate::collaboration::Template;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

@@ -2,10 +2,10 @@
 
 use super::cron::CronExpression;
 use super::runner::{ExecutionContext, JobExecutor, ScheduledJob};
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::RwLock;
 use tokio::time::interval;
 
 /// Configuration for the scheduler

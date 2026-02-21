@@ -1,6 +1,6 @@
 // Marketplace Listing - Item listing and management
 
-use crate::marketplace::{MarketplaceItem, MarketplaceItemType, MarketplaceFilters};
+use crate::marketplace::{MarketplaceItem, MarketplaceItemType};
 use std::collections::HashMap;
 
 /// Marketplace listing manager

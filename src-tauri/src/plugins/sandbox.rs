@@ -1,6 +1,6 @@
 // Plugin Sandbox - Sandboxed execution environment
 
-use crate::plugins::{PluginContext, PluginPermission, ResourceLimits};
+use crate::plugins::{PluginContext, PluginPermission};
 use std::collections::HashMap;
 
 /// Sandbox instance for isolated plugin execution

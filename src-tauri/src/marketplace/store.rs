@@ -1,7 +1,6 @@
 // Marketplace Store - Remote marketplace API client
 
-use crate::marketplace::{MarketplaceItem, MarketplaceFilters, MarketplaceCategory};
-use serde_json::Value;
+use crate::marketplace::{MarketplaceItem, MarketplaceCategory, MarketplaceFilters};
 
 /// Marketplace store client
 pub struct MarketplaceStore {
@@ -26,9 +25,9 @@ impl MarketplaceStore {
     /// List marketplace items with filters
     pub async fn list_items(
         &self,
-        filters: &MarketplaceFilters,
-        page: u32,
-        page_size: u32,
+        _filters: &MarketplaceFilters,
+        _page: u32,
+        _page_size: u32,
     ) -> Result<Vec<MarketplaceItem>, String> {
         // In production, this would make actual HTTP requests
         // For now, return mock data
@@ -82,9 +81,9 @@ impl MarketplaceStore {
     pub async fn search_items(
         &self,
         query: &str,
-        filters: &MarketplaceFilters,
-        page: u32,
-        page_size: u32,
+        _filters: &MarketplaceFilters,
+        _page: u32,
+        _page_size: u32,
     ) -> Result<Vec<MarketplaceItem>, String> {
         let items = self.get_mock_items();
         let query_lower = query.to_lowercase();

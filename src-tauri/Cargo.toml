@@ -24,6 +24,7 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 chrono = { version = "0.4", features = ["serde"] }
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
+dirs = "5"
 
 [dev-dependencies]
 tempfile = "3"

@@ -1,6 +1,6 @@
 // Plugin Loader - Loads and validates plugins
 
-use crate::plugins::{Plugin, PluginManifest, PluginPermission, PluginState, ResourceLimits};
+use crate::plugins::{PluginManifest, PluginPermission, ResourceLimits};
 use std::path::PathBuf;
 use std::collections::HashMap;
 

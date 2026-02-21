@@ -1266,3 +1266,379 @@ pub fn load_scheduled_jobs(
 
     Ok(jobs)
 }
+
+// ============================================================================
+// Plugin Model and Commands (v0.4)
+//===========================================================================
+
+/// Plugin model
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct Plugin {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub manifest: String,
+    pub permissions: String,
+    pub enabled: bool,
+    pub installed_at: String,
+    pub updated_at: String,
+}
+
+#[tauri::command]
+pub fn list_plugins(db: tauri::State<'_, DbState>) -> Result<Vec<Plugin>, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, name, version, manifest, permissions, enabled, installed_at, updated_at
+             FROM plugins ORDER BY name",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let plugins = stmt
+        .query_map([], |row| {
+            Ok(Plugin {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                version: row.get(2)?,
+                manifest: row.get(3)?,
+                permissions: row.get(4)?,
+                enabled: row.get::<_, i32>(5)? != 0,
+                installed_at: row.get(6)?,
+                updated_at: row.get(7)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(plugins)
+}
+
+#[tauri::command]
+pub fn get_plugin(db: tauri::State<'_, DbState>, id: String) -> Result<Plugin, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+
+    let plugin = conn
+        .query_row(
+            "SELECT id, name, version, manifest, permissions, enabled, installed_at, updated_at
+             FROM plugins WHERE id = ?1",
+            [&id],
+            |row| {
+                Ok(Plugin {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    version: row.get(2)?,
+                    manifest: row.get(3)?,
+                    permissions: row.get(4)?,
+                    enabled: row.get::<_, i32>(5)? != 0,
+                    installed_at: row.get(6)?,
+                    updated_at: row.get(7)?,
+                })
+            },
+        )
+        .map_err(|e| e.to_string())?;
+
+    Ok(plugin)
+}
+
+#[tauri::command]
+pub fn install_plugin(
+    db: tauri::State<'_, DbState>,
+    id: String,
+    name: String,
+    version: String,
+    manifest: String,
+    permissions: String,
+) -> Result<(), String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+
+    conn.execute(
+        "INSERT INTO plugins (id, name, version, manifest, permissions, enabled, installed_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, ?7)
+         ON CONFLICT(name) DO UPDATE SET version = ?3, manifest = ?4, permissions = ?5, updated_at = ?7",
+        [&id, &name, &version, &manifest, &permissions, &now, &now],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn uninstall_plugin(db: tauri::State<'_, DbState>, id: String) -> Result<(), String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+
+    conn.execute("DELETE FROM plugins WHERE id = ?1", [&id])
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn enable_plugin(db: tauri::State<'_, DbState>, id: String) -> Result<(), String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+
+    conn.execute(
+        "UPDATE plugins SET enabled = 1, updated_at = ?1 WHERE id = ?2",
+        [&now, &id],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn disable_plugin(db: tauri::State<'_, DbState>, id: String) -> Result<(), String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+
+    conn.execute(
+        "UPDATE plugins SET enabled = 0, updated_at = ?1 WHERE id = ?2",
+        [&now, &id],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+// ============================================================================
+// Template Model and Commands (v0.4)
+//===========================================================================
+
+/// Template model
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct Template {
+    pub id: String,
+    pub name: String,
+    pub category: String,
+    pub content: String,
+    pub visibility: String,
+    pub version: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[tauri::command]
+pub fn list_templates(db: tauri::State<'_, DbState>) -> Result<Vec<Template>, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, name, category, content, visibility, version, created_at, updated_at
+             FROM templates ORDER BY category, name",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let templates = stmt
+        .query_map([], |row| {
+            Ok(Template {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                category: row.get(2)?,
+                content: row.get(3)?,
+                visibility: row.get(4)?,
+                version: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(templates)
+}
+
+#[tauri::command]
+pub fn get_template(db: tauri::State<'_, DbState>, id: String) -> Result<Template, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+
+    let template = conn
+        .query_row(
+            "SELECT id, name, category, content, visibility, version, created_at, updated_at
+             FROM templates WHERE id = ?1",
+            [&id],
+            |row| {
+                Ok(Template {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    category: row.get(2)?,
+                    content: row.get(3)?,
+                    visibility: row.get(4)?,
+                    version: row.get(5)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
+                })
+            },
+        )
+        .map_err(|e| e.to_string())?;
+
+    Ok(template)
+}
+
+#[tauri::command]
+pub fn create_template(
+    db: tauri::State<'_, DbState>,
+    id: String,
+    name: String,
+    category: String,
+    content: String,
+    visibility: String,
+) -> Result<(), String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+
+    conn.execute(
+        "INSERT INTO templates (id, name, category, content, visibility, version, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, '1.0.0', ?6, ?7)",
+        [&id, &name, &category, &content, &visibility, &now, &now],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn update_template(
+    db: tauri::State<'_, DbState>,
+    id: String,
+    name: String,
+    category: String,
+    content: String,
+    visibility: String,
+) -> Result<(), String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+
+    conn.execute(
+        "UPDATE templates SET name = ?1, category = ?2, content = ?3, visibility = ?4, updated_at = ?5 WHERE id = ?6",
+        [&name, &category, &content, &visibility, &now, &id],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_template(db: tauri::State<'_, DbState>, id: String) -> Result<(), String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+
+    conn.execute("DELETE FROM templates WHERE id = ?1", [&id])
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn search_templates(
+    db: tauri::State<'_, DbState>,
+    query: String,
+) -> Result<Vec<Template>, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+
+    let pattern = format!("%{}%", query);
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, name, category, content, visibility, version, created_at, updated_at
+             FROM templates WHERE name LIKE ?1 OR content LIKE ?1 ORDER BY name",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let templates = stmt
+        .query_map([&pattern], |row| {
+            Ok(Template {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                category: row.get(2)?,
+                content: row.get(3)?,
+                visibility: row.get(4)?,
+                version: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(templates)
+}
+
+// ============================================================================
+// Voice Settings Commands (v0.4)
+//===========================================================================
+
+/// Voice settings model
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct VoiceSettings {
+    pub id: String,
+    pub enabled: bool,
+    pub stt_model: String,
+    pub tts_voice: String,
+    pub language: String,
+    pub wake_word: Option<String>,
+    pub vad_sensitivity: f32,
+    pub updated_at: String,
+}
+
+#[tauri::command]
+pub fn get_voice_settings(db: tauri::State<'_, DbState>) -> Result<Option<VoiceSettings>, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+
+    let settings = conn
+        .query_row(
+            "SELECT id, enabled, stt_model, tts_voice, language, wake_word, vad_sensitivity, updated_at
+             FROM voice_settings LIMIT 1",
+            [],
+            |row| {
+                Ok(VoiceSettings {
+                    id: row.get(0)?,
+                    enabled: row.get::<_, i32>(1)? != 0,
+                    stt_model: row.get(2)?,
+                    tts_voice: row.get(3)?,
+                    language: row.get(4)?,
+                    wake_word: row.get(5)?,
+                    vad_sensitivity: row.get(6)?,
+                    updated_at: row.get(7)?,
+                })
+            },
+        )
+        .ok();
+
+    Ok(settings)
+}
+
+#[tauri::command]
+pub fn update_voice_settings(
+    db: tauri::State<'_, DbState>,
+    id: String,
+    enabled: bool,
+    stt_model: String,
+    tts_voice: String,
+    language: String,
+    wake_word: Option<String>,
+    vad_sensitivity: f32,
+) -> Result<(), String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+    let enabled_str = if enabled { "1".to_string() } else { "0".to_string() };
+
+    conn.execute(
+        "INSERT INTO voice_settings (id, enabled, stt_model, tts_voice, language, wake_word, vad_sensitivity, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+         ON CONFLICT(id) DO UPDATE SET enabled = ?2, stt_model = ?3, tts_voice = ?4, language = ?5, wake_word = ?6, vad_sensitivity = ?7, updated_at = ?8",
+        [&id, &enabled_str, &stt_model, &tts_voice, &language, &wake_word.unwrap_or_default(), &vad_sensitivity.to_string(), &now],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}

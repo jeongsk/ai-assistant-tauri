@@ -318,3 +318,112 @@ pub async fn shutdown_agent(
     state_guard.reset();
     Ok(())
 }
+
+/// Execute a recipe via agent runtime
+#[tauri::command]
+pub async fn execute_recipe(
+    state: tauri::State<'_, Mutex<SidecarState>>,
+    recipe_id: String,
+    steps: Vec<serde_json::Value>,
+    variables: Option<serde_json::Value>,
+) -> Result<String, String> {
+    let state_guard = state.lock()
+        .map_err(|e| format!("Failed to acquire lock: {}", e))?;
+
+    let request = AgentRequest {
+        jsonrpc: "2.0".to_string(),
+        method: "execute_recipe".to_string(),
+        params: json!({
+            "recipeId": recipe_id,
+            "steps": steps,
+            "variables": variables
+        }),
+        id: uuid::Uuid::new_v4().to_string(),
+    };
+
+    let response = state_guard.with_process(|process| process.send_request(&request))?;
+
+    if let Some(error) = response.error {
+        return Err(format!("{}: {}", error.code, error.message));
+    }
+
+    let result = response.result
+        .as_ref()
+        .and_then(|r| r.get("result"))
+        .and_then(|r| r.as_str())
+        .unwrap_or("Recipe executed");
+
+    Ok(result.to_string())
+}
+
+/// Execute a skill via agent runtime
+#[tauri::command]
+pub async fn execute_skill(
+    state: tauri::State<'_, Mutex<SidecarState>>,
+    skill_id: String,
+    prompt: String,
+    input: String,
+) -> Result<String, String> {
+    let state_guard = state.lock()
+        .map_err(|e| format!("Failed to acquire lock: {}", e))?;
+
+    let request = AgentRequest {
+        jsonrpc: "2.0".to_string(),
+        method: "execute_skill".to_string(),
+        params: json!({
+            "skillId": skill_id,
+            "prompt": prompt,
+            "input": input
+        }),
+        id: uuid::Uuid::new_v4().to_string(),
+    };
+
+    let response = state_guard.with_process(|process| process.send_request(&request))?;
+
+    if let Some(error) = response.error {
+        return Err(format!("{}: {}", error.code, error.message));
+    }
+
+    let result = response.result
+        .as_ref()
+        .and_then(|r| r.get("result"))
+        .and_then(|r| r.as_str())
+        .unwrap_or("");
+
+    Ok(result.to_string())
+}
+
+/// Execute a prompt via agent runtime
+#[tauri::command]
+pub async fn execute_prompt(
+    state: tauri::State<'_, Mutex<SidecarState>>,
+    prompt: String,
+    context: Option<serde_json::Value>,
+) -> Result<String, String> {
+    let state_guard = state.lock()
+        .map_err(|e| format!("Failed to acquire lock: {}", e))?;
+
+    let request = AgentRequest {
+        jsonrpc: "2.0".to_string(),
+        method: "execute_prompt".to_string(),
+        params: json!({
+            "prompt": prompt,
+            "context": context
+        }),
+        id: uuid::Uuid::new_v4().to_string(),
+    };
+
+    let response = state_guard.with_process(|process| process.send_request(&request))?;
+
+    if let Some(error) = response.error {
+        return Err(format!("{}: {}", error.code, error.message));
+    }
+
+    let result = response.result
+        .as_ref()
+        .and_then(|r| r.get("result"))
+        .and_then(|r| r.as_str())
+        .unwrap_or("");
+
+    Ok(result.to_string())
+}

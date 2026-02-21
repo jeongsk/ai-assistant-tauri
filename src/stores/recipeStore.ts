@@ -154,6 +154,12 @@ export const useRecipeStore = create<RecipeState>((set, get) => ({
     set({ executing: true, error: null });
 
     try {
+      // Get the recipe to execute
+      const recipe = get().getRecipe(recipeId);
+      if (!recipe) {
+        throw new Error(`Recipe ${recipeId} not found`);
+      }
+
       // Create execution record
       await invoke('create_recipe_execution', {
         id: executionId,
@@ -161,12 +167,42 @@ export const useRecipeStore = create<RecipeState>((set, get) => ({
         variables: variables ? JSON.stringify(variables) : null,
       });
 
-      // TODO: Actually execute the recipe via agent runtime
-      // For now, just mark as completed
+      // Prepare steps with variable substitution
+      const stepsWithVars = recipe.steps.map((step) => {
+        let prompt = step.prompt || '';
+        let description = step.description || '';
+
+        // Substitute variables in prompt and description
+        if (variables) {
+          Object.entries(variables).forEach(([key, value]) => {
+            const placeholder = `{{${key}}}`;
+            // Use split/join instead of replaceAll for ES5 compatibility
+            prompt = prompt.split(placeholder).join(String(value));
+            description = description.split(placeholder).join(String(value));
+          });
+        }
+
+        return {
+          type: step.type || 'prompt',
+          description,
+          prompt,
+          tool: step.tool,
+          args: step.args,
+        };
+      });
+
+      // Execute the recipe via agent runtime
+      const result = await invoke<string>('execute_recipe', {
+        recipeId,
+        steps: stepsWithVars,
+        variables: variables || null,
+      });
+
+      // Mark as completed
       await invoke('update_recipe_execution', {
         id: executionId,
         status: 'completed',
-        result: 'Recipe execution not yet implemented',
+        result: result || 'Recipe executed successfully',
         error: null,
       });
 
@@ -175,12 +211,16 @@ export const useRecipeStore = create<RecipeState>((set, get) => ({
       return executionId;
     } catch (error) {
       // Update execution as failed
-      await invoke('update_recipe_execution', {
-        id: executionId,
-        status: 'failed',
-        result: null,
-        error: String(error),
-      });
+      try {
+        await invoke('update_recipe_execution', {
+          id: executionId,
+          status: 'failed',
+          result: null,
+          error: String(error),
+        });
+      } catch {
+        // Ignore update errors
+      }
 
       set({ error: String(error), executing: false });
       throw error;

@@ -679,7 +679,7 @@ impl JobExecutor {
 
         // Remove from running and collect results
         for id in to_remove {
-            if let Some(handle) = running.remove(&id) {
+            if let Some(_handle) = running.remove(&id) {
                 // Try to get the result from completed_results
                 let results = self.completed_results.lock().unwrap();
                 if let Some((job_id, result)) = results.get(&id) {
@@ -704,7 +704,7 @@ impl JobExecutor {
     fn save_execution_result(
         context: &ExecutionContext,
         execution_id: &str,
-        job_id: &str,
+        _job_id: &str,
         result: &ExecutionResult,
     ) -> Result<(), String> {
         use rusqlite::params;

@@ -6,6 +6,7 @@ mod plugins;
 mod collaboration;
 mod scheduler;
 mod marketplace;
+mod integration;
 
 use scheduler::JobScheduler;
 
@@ -323,7 +324,7 @@ pub fn run() {
                 if let Ok(jobs) = db::load_scheduled_jobs(&app_handle) {
                     let scheduler = app_handle.try_state::<Arc<tokio::sync::Mutex<JobScheduler>>>();
                     if let Some(scheduler) = scheduler {
-                        let mut scheduler = scheduler.lock().await;
+                        let scheduler = scheduler.lock().await;
                         if let Err(e) = scheduler.load_jobs(jobs).await {
                             tracing::error!("Failed to load scheduled jobs: {}", e);
                         } else {
@@ -357,6 +358,9 @@ pub fn run() {
             sidecar::get_tools,
             sidecar::configure_providers,
             sidecar::shutdown_agent,
+            sidecar::execute_recipe,
+            sidecar::execute_skill,
+            sidecar::execute_prompt,
             // Database commands
             db::load_conversations,
             db::save_conversation,
@@ -409,7 +413,40 @@ pub fn run() {
             marketplace_get_categories,
             marketplace_install_item,
             marketplace_uninstall_item,
-            marketplace_check_updates
+            marketplace_check_updates,
+            // Plugin commands (v0.4)
+            db::list_plugins,
+            db::get_plugin,
+            db::install_plugin,
+            db::uninstall_plugin,
+            db::enable_plugin,
+            db::disable_plugin,
+            // Template commands (v0.4)
+            db::list_templates,
+            db::get_template,
+            db::create_template,
+            db::update_template,
+            db::delete_template,
+            db::search_templates,
+            // Voice settings commands (v0.4)
+            db::get_voice_settings,
+            db::update_voice_settings,
+            // Voice commands (v0.4)
+            voice::stt::init_stt,
+            voice::stt::transcribe,
+            voice::stt::get_available_models,
+            voice::tts::init_tts,
+            voice::tts::synthesize,
+            voice::tts::get_available_voices,
+            // Integration commands (v0.4)
+            integration::test_database_connection,
+            integration::get_database_connection_string,
+            integration::validate_git_repository,
+            integration::get_git_status,
+            integration::get_git_current_commit,
+            integration::test_cloud_connection,
+            integration::list_cloud_objects,
+            integration::get_cloud_endpoint
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

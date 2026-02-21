@@ -7,9 +7,10 @@ pub mod install;
 #[cfg(test)]
 mod tests;
 
-pub use store::*;
-pub use listing::*;
-pub use install::*;
+// Re-export commonly used types from submodules
+pub use store::MarketplaceStore;
+pub use install::MarketplaceInstaller;
+
 
 use serde::{Deserialize, Serialize};
 

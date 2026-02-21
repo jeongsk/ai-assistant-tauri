@@ -3,6 +3,7 @@
  */
 
 import { create } from 'zustand';
+import { invoke } from '@tauri-apps/api/core';
 import { Template, SharedWorkflow, ExportOptions, ConversationExport } from '../types/collaboration';
 
 interface CollaborationState {
@@ -13,9 +14,11 @@ interface CollaborationState {
 
   // Template Actions
   loadTemplates: () => Promise<void>;
+  getTemplate: (id: string) => Promise<Template | undefined>;
   createTemplate: (template: Omit<Template, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
-  updateTemplate: (id: string, updates: Partial<Template>) => Promise<void>;
+  updateTemplate: (id: string, updates: Partial<Omit<Template, 'id' | 'createdAt' | 'updatedAt'>>) => Promise<void>;
   deleteTemplate: (id: string) => Promise<void>;
+  searchTemplates: (query: string) => Promise<Template[]>;
 
   // Workflow Actions
   loadWorkflows: () => Promise<void>;
@@ -38,61 +41,156 @@ export const useCollaborationStore = create<CollaborationState>((set, get) => ({
   loadTemplates: async () => {
     set({ isLoading: true, error: null });
     try {
-      // In production, load from Tauri
-      const templates: Template[] = [];
+      const rawTemplates = await invoke<Array<{
+        id: string;
+        name: string;
+        category: string;
+        content: string;
+        visibility: string;
+        version: string;
+        created_at: string;
+        updated_at: string;
+      }>>('list_templates');
+
+      const templates: Template[] = rawTemplates.map(t => ({
+        id: t.id,
+        name: t.name,
+        category: t.category,
+        content: t.content,
+        visibility: t.visibility as 'private' | 'public' | 'team',
+        version: t.version,
+        createdAt: t.created_at,
+        updatedAt: t.updated_at,
+      }));
+
       set({ templates, isLoading: false });
     } catch (error) {
       set({ error: (error as Error).message, isLoading: false });
     }
   },
 
+  getTemplate: async (id: string) => {
+    try {
+      const rawTemplate = await invoke<{
+        id: string;
+        name: string;
+        category: string;
+        content: string;
+        visibility: string;
+        version: string;
+        created_at: string;
+        updated_at: string;
+      }>('get_template', { id });
+
+      return {
+        id: rawTemplate.id,
+        name: rawTemplate.name,
+        category: rawTemplate.category,
+        content: rawTemplate.content,
+        visibility: rawTemplate.visibility as 'private' | 'public' | 'team',
+        version: rawTemplate.version,
+        createdAt: rawTemplate.created_at,
+        updatedAt: rawTemplate.updated_at,
+      };
+    } catch {
+      return undefined;
+    }
+  },
+
   createTemplate: async (input) => {
     set({ isLoading: true, error: null });
     try {
-      const template: Template = {
-        id: `tpl-${Date.now()}`,
-        ...input,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
+      const id = `tpl-${Date.now()}`;
 
-      set(state => ({
-        templates: [...state.templates, template],
-        isLoading: false,
-      }));
+      await invoke('create_template', {
+        id,
+        name: input.name,
+        category: input.category,
+        content: input.content,
+        visibility: input.visibility,
+      });
+
+      // Reload templates after creation
+      await get().loadTemplates();
     } catch (error) {
       set({ error: (error as Error).message, isLoading: false });
+      throw error;
+    } finally {
+      set({ isLoading: false });
     }
   },
 
   updateTemplate: async (id, updates) => {
     set({ error: null });
     try {
-      set(state => ({
-        templates: state.templates.map(t =>
-          t.id === id ? { ...t, ...updates, updatedAt: new Date().toISOString() } : t
-        ),
-      }));
+      const current = get().templates.find(t => t.id === id);
+      if (!current) {
+        throw new Error(`Template ${id} not found`);
+      }
+
+      await invoke('update_template', {
+        id,
+        name: updates.name ?? current.name,
+        category: updates.category ?? current.category,
+        content: updates.content ?? current.content,
+        visibility: updates.visibility ?? current.visibility,
+      });
+
+      // Reload templates after update
+      await get().loadTemplates();
     } catch (error) {
       set({ error: (error as Error).message });
+      throw error;
     }
   },
 
   deleteTemplate: async (id) => {
     set({ isLoading: true, error: null });
     try {
-      set(state => ({
-        templates: state.templates.filter(t => t.id !== id),
-        isLoading: false,
-      }));
+      await invoke('delete_template', { id });
+
+      // Reload templates after deletion
+      await get().loadTemplates();
     } catch (error) {
       set({ error: (error as Error).message, isLoading: false });
+      throw error;
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  searchTemplates: async (query: string) => {
+    try {
+      const rawTemplates = await invoke<Array<{
+        id: string;
+        name: string;
+        category: string;
+        content: string;
+        visibility: string;
+        version: string;
+        created_at: string;
+        updated_at: string;
+      }>>('search_templates', { query });
+
+      return rawTemplates.map(t => ({
+        id: t.id,
+        name: t.name,
+        category: t.category,
+        content: t.content,
+        visibility: t.visibility as 'private' | 'public' | 'team',
+        version: t.version,
+        createdAt: t.created_at,
+        updatedAt: t.updated_at,
+      }));
+    } catch {
+      return [];
     }
   },
 
   loadWorkflows: async () => {
     set({ isLoading: true, error: null });
     try {
+      // Workflows are stored in shared_workflows table but not yet implemented in Tauri
       const workflows: SharedWorkflow[] = [];
       set({ workflows, isLoading: false });
     } catch (error) {
