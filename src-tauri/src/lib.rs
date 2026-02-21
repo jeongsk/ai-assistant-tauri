@@ -7,8 +7,11 @@ mod collaboration;
 mod scheduler;
 mod marketplace;
 mod integration;
+mod security;
 
 use scheduler::JobScheduler;
+use security::CredentialManager;
+use plugins::PluginExecutor;
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -308,6 +311,15 @@ pub fn run() {
             let sidecar_state = std::sync::Mutex::new(sidecar::SidecarState::new());
             app.manage(sidecar_state);
 
+            // Initialize credential manager
+            let credential_manager = CredentialManager::default()
+                .expect("Failed to initialize credential manager");
+            app.manage(std::sync::Mutex::new(credential_manager));
+
+            // Initialize plugin executor
+            let plugin_executor = PluginExecutor::new();
+            app.manage(std::sync::Mutex::new(plugin_executor));
+
             // Initialize job scheduler
             let scheduler_config = scheduler::SchedulerConfig {
                 check_interval_secs: 60,
@@ -446,7 +458,28 @@ pub fn run() {
             integration::get_git_current_commit,
             integration::test_cloud_connection,
             integration::list_cloud_objects,
-            integration::get_cloud_endpoint
+            integration::get_cloud_endpoint,
+            // Security commands (v0.5)
+            security::credentials_set_password,
+            security::credentials_get_password,
+            security::credentials_delete_password,
+            security::run_migration,
+            // Cloud storage commands (v0.5)
+            db::list_cloud_storages,
+            db::create_cloud_storage,
+            db::delete_cloud_storage,
+            // Git repository commands (v0.5)
+            db::list_git_repositories,
+            db::create_git_repository,
+            db::delete_git_repository,
+            // Plugin execution commands (v0.5)
+            plugins::plugin_execute,
+            plugins::plugin_get_resource_usage,
+            plugins::plugin_send_message,
+            plugins::plugin_get_messages,
+            plugins::plugin_stop,
+            plugins::plugin_restart,
+            plugins::plugin_list_running
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

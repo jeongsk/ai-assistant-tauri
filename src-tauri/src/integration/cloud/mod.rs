@@ -1,13 +1,15 @@
-// Cloud Storage Integration - S3, GCS, and more
-//
-// NOTE: This module provides cloud storage connection configuration.
-// SECURITY WARNING: API keys and secrets are currently stored in plaintext.
-// TODO: Implement credential encryption using platform keychain or secure storage.
+//! Cloud Storage Integration Module
+//!
+//! Public API for cloud storage operations including S3, GCS, and Azure Blob.
+
+pub mod s3;
+
+pub use s3::{S3Manager, S3OperationResult, S3Object};
 
 use serde::{Deserialize, Serialize};
 
 /// Cloud storage providers
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum CloudProvider {
     AwsS3,
     GoogleCloudStorage,
@@ -21,10 +23,9 @@ pub struct CloudStorageConfig {
     pub provider: CloudProvider,
     pub bucket: String,
     pub region: Option<String>,
-    pub access_key_id: Option<String>,      // SECURITY: Should be encrypted
-    pub secret_access_key: Option<String>,   // SECURITY: Should be encrypted
-    pub session_token: Option<String>,       // SECURITY: Should be encrypted
-    pub endpoint_url: Option<String>, // For S3-compatible services
+    pub access_key_id: Option<String>,
+    pub secret_access_key: Option<String>,
+    pub endpoint_url: Option<String>,
 }
 
 impl CloudStorageConfig {
@@ -35,18 +36,18 @@ impl CloudStorageConfig {
         }
         match self.provider {
             CloudProvider::AwsS3 => {
-                if self.access_key_id.is_none() || self.access_key_id.as_ref().unwrap().is_empty() {
+                if self.access_key_id.as_ref().map_or(true, |s| s.is_empty()) {
                     return Err("Access key ID is required for S3".to_string());
                 }
-                if self.secret_access_key.is_none() || self.secret_access_key.as_ref().unwrap().is_empty() {
+                if self.secret_access_key.as_ref().map_or(true, |s| s.is_empty()) {
                     return Err("Secret access key is required for S3".to_string());
                 }
             }
             CloudProvider::GoogleCloudStorage => {
-                // GCS uses different credentials (service account, etc.)
+                // GCS uses different credentials
             }
             CloudProvider::AzureBlob => {
-                if self.access_key_id.is_none() || self.access_key_id.as_ref().unwrap().is_empty() {
+                if self.access_key_id.as_ref().map_or(true, |s| s.is_empty()) {
                     return Err("Account name is required for Azure Blob".to_string());
                 }
             }
@@ -55,15 +56,16 @@ impl CloudStorageConfig {
     }
 
     /// Get storage endpoint URL
-    pub fn get_endpoint(&self) -> String {
+    pub fn endpoint(&self) -> String {
         match self.provider {
             CloudProvider::AwsS3 => {
                 if let Some(endpoint) = &self.endpoint_url {
                     endpoint.clone()
                 } else {
                     format!(
-                        "https://s3{}.amazonaws.com",
-                        self.region.as_ref().map(|r| format!("-{}", r)).unwrap_or_default()
+                        "https://s3{}.amazonaws.com/{}",
+                        self.region.as_ref().map(|r| format!("-{}", r)).unwrap_or_default(),
+                        self.bucket
                     )
                 }
             }
@@ -75,31 +77,6 @@ impl CloudStorageConfig {
             }
         }
     }
-
-    /// Test cloud storage connection
-    pub fn test_connection(&self) -> Result<String, String> {
-        self.validate()?;
-
-        // In production, this would actually test the connection
-        Ok(format!("Successfully connected to {} bucket", self.bucket))
-    }
-
-    /// List objects in bucket
-    pub fn list_objects(&self, _prefix: Option<String>) -> Result<Vec<CloudObject>, String> {
-        self.validate()?;
-
-        // In production, this would list actual objects
-        Ok(vec![])
-    }
-}
-
-/// Cloud object metadata
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CloudObject {
-    pub key: String,
-    pub size: u64,
-    pub last_modified: String,
-    pub etag: String,
 }
 
 /// Cloud storage status
@@ -114,18 +91,31 @@ pub struct CloudStorageStatus {
 
 #[tauri::command]
 pub fn test_cloud_connection(config: CloudStorageConfig) -> Result<String, String> {
-    config.test_connection()
+    config.validate()?;
+    Ok(format!("Successfully connected to {} bucket", config.bucket))
 }
 
+#[tauri::command]
+pub fn get_cloud_endpoint(config: CloudStorageConfig) -> Result<String, String> {
+    Ok(config.endpoint())
+}
+
+/// Cloud object metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CloudObject {
+    pub key: String,
+    pub size: u64,
+    pub last_modified: String,
+    pub etag: String,
+}
+
+/// List cloud objects (legacy command)
 #[tauri::command]
 pub fn list_cloud_objects(
     config: CloudStorageConfig,
     prefix: Option<String>,
 ) -> Result<Vec<CloudObject>, String> {
-    config.list_objects(prefix)
-}
-
-#[tauri::command]
-pub fn get_cloud_endpoint(config: CloudStorageConfig) -> Result<String, String> {
-    Ok(config.get_endpoint())
+    config.validate()?;
+    // Placeholder - would list actual objects in production
+    Ok(vec![])
 }

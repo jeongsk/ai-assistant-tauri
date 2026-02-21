@@ -1642,3 +1642,158 @@ pub fn update_voice_settings(
 
     Ok(())
 }
+
+// ============================================================================
+// Cloud Storage Model and Commands (v0.5)
+// ============================================================================
+
+/// Cloud storage model
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct CloudStorage {
+    pub id: String,
+    pub name: String,
+    pub provider: String,
+    pub bucket: String,
+    pub region: Option<String>,
+    pub created_at: String,
+}
+
+#[tauri::command]
+pub fn list_cloud_storages(db: tauri::State<'_, DbState>) -> Result<Vec<CloudStorage>, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, name, provider, bucket, region, created_at
+             FROM cloud_storages ORDER BY name",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let storages = stmt
+        .query_map([], |row| {
+            Ok(CloudStorage {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                provider: row.get(2)?,
+                bucket: row.get(3)?,
+                region: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(storages)
+}
+
+#[tauri::command]
+pub fn create_cloud_storage(
+    db: tauri::State<'_, DbState>,
+    id: String,
+    name: String,
+    provider: String,
+    bucket: String,
+    region: Option<String>,
+) -> Result<(), String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+
+    conn.execute(
+        "INSERT INTO cloud_storages (id, name, provider, bucket, region, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        [&id, &name, &provider, &bucket, &region.unwrap_or_default(), &now],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_cloud_storage(db: tauri::State<'_, DbState>, id: String) -> Result<(), String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+
+    conn.execute("DELETE FROM cloud_storages WHERE id = ?1", [&id])
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+// ============================================================================
+// Git Repository Model and Commands (v0.5)
+// ============================================================================
+
+/// Git repository model
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct GitRepository {
+    pub id: String,
+    pub name: String,
+    pub path: String,
+    pub user_name: Option<String>,
+    pub user_email: Option<String>,
+    pub created_at: String,
+}
+
+#[tauri::command]
+pub fn list_git_repositories(db: tauri::State<'_, DbState>) -> Result<Vec<GitRepository>, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, name, path, user_name, user_email, created_at
+             FROM git_repositories ORDER BY name",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let repos = stmt
+        .query_map([], |row| {
+            Ok(GitRepository {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                path: row.get(2)?,
+                user_name: row.get(3)?,
+                user_email: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    Ok(repos)
+}
+
+#[tauri::command]
+pub fn create_git_repository(
+    db: tauri::State<'_, DbState>,
+    id: String,
+    name: String,
+    path: String,
+    user_name: Option<String>,
+    user_email: Option<String>,
+) -> Result<(), String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+
+    conn.execute(
+        "INSERT INTO git_repositories (id, name, path, user_name, user_email, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        [&id, &name, &path, &user_name.unwrap_or_default(), &user_email.unwrap_or_default(), &now],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_git_repository(db: tauri::State<'_, DbState>, id: String) -> Result<(), String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+
+    conn.execute("DELETE FROM git_repositories WHERE id = ?1", [&id])
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+

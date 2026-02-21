@@ -3,7 +3,7 @@
 use rusqlite::Connection;
 use rusqlite::Result;
 
-const _SCHEMA_VERSION: i32 = 4;
+const _SCHEMA_VERSION: i32 = 5;
 
 pub fn run_migrations(conn: &Connection) -> Result<()> {
     // Create migrations table if not exists
@@ -39,6 +39,10 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
 
     if current_version < 4 {
         migrate_v4(conn)?;
+    }
+
+    if current_version < 5 {
+        migrate_v5(conn)?;
     }
 
     Ok(())
@@ -305,6 +309,54 @@ fn migrate_v4(conn: &Connection) -> Result<()> {
         INSERT INTO schema_migrations (version) VALUES (4);
         "#,
     )?;
+
+    Ok(())
+}
+
+/// Migration v5: Add tables for encrypted credentials
+///
+/// This migration:
+/// 1. Adds `encrypted_password` column placeholder to database_connections
+/// 2. Creates `cloud_storages` table for cloud provider credentials
+/// 3. Creates `git_repositories` table for git SSH key storage
+fn migrate_v5(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        r#"
+        -- Add encrypted_password column to database_connections (may fail if already exists)
+        ALTER TABLE database_connections ADD COLUMN encrypted_password TEXT;
+
+        -- Create cloud_storages table
+        CREATE TABLE IF NOT EXISTS cloud_storages (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            provider TEXT NOT NULL,
+            bucket TEXT NOT NULL,
+            region TEXT,
+            encrypted_credentials TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        -- Create git_repositories table
+        CREATE TABLE IF NOT EXISTS git_repositories (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            path TEXT NOT NULL,
+            encrypted_ssh_key TEXT,
+            user_name TEXT,
+            user_email TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        -- Indexes
+        CREATE INDEX IF NOT EXISTS idx_cloud_storages_name ON cloud_storages(name);
+        CREATE INDEX IF NOT EXISTS idx_git_repositories_name ON git_repositories(name);
+
+        -- Record migration
+        INSERT INTO schema_migrations (version) VALUES (5);
+        "#,
+    )?;
+
+    tracing::info!("Database migration v5 completed");
 
     Ok(())
 }

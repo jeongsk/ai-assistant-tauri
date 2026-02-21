@@ -60,6 +60,11 @@ impl PluginSandbox {
         }
     }
 
+    /// Get the plugin context
+    pub fn context(&self) -> &PluginContext {
+        &self.context
+    }
+
     /// Check if action is permitted
     pub fn check_permission(&self, action: &SandboxAction) -> Result<(), String> {
         match action {
