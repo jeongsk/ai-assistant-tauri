@@ -114,6 +114,165 @@ cargo test       # Rust 테스트
 - **v0.3** ✅: 서브에이전트, 다중 제공자 라우팅, **Cron 작업 ✅**, **Tauri 통합 ✅**, **Agent Runtime 연동 ✅**, **DB 영속성 ✅**
 - **v0.4** ✅: 메모리 시스템 ✅, 음성 지원 ✅, 플러그인 시스템 ✅, 통합 기능 ✅, 협업 기능 ✅
 
+---
+
+# v0.4 Release Notes (2025-02-20)
+
+## Overview
+v0.4는 음성 인식, 플러그인 시스템, 외부 서비스 통합, 템플릿 관리 기능을 추가한 메이저 업데이트입니다.
+
+## New Features
+
+### 🎤 Voice Support
+- **Speech-to-Text (STT)**: Whisper 모델 기반 음성 인식
+  - 지원 모델: tiny, base, small, medium, large
+  - 다국어 지원 (영어, 한국어, 일본어, 중국어, 스페인어, 프랑스어, 독일어)
+  - VAD (Voice Activity Detection) 설정
+- **Text-to-Speech (TTS)**: 플랫폼별 음성 합성
+  - Windows: SAPI
+  - macOS: NSSpeechSynthesizer
+  - Linux: espeak
+- **Wake Word**: 선택적 웨이크 워드 활성화
+- **UI**: Settings > Voice 탭에서 설정 가능
+
+### 🔌 Plugin System
+- **Plugin Loader**: 매니페스트 기반 플러그인 로드
+- **Sandbox Execution**: 권한 기반 샌드박스 실행 환경
+- **Resource Limits**: 메모리, CPU, 실행 시간 제한
+- **Permission Types**:
+  - 파일 시스템 접근 (paths, access level)
+  - 네트워크 접속 (hosts)
+  - 데이터베이스 접근 (tables)
+  - 시스템 기능 (capabilities)
+- **UI**: Settings > Plugins 탭에서 관리
+
+### 🔗 External Integrations
+- **Database**: PostgreSQL, MySQL 연결 설정
+- **Git**: 저장소 관리 (경로, 사용자 정보)
+- **Cloud Storage**: AWS S3, GCS, Azure Blob 연결
+- **UI**: 메인 네비게이션 > Integrations, Settings > Integrations
+
+### 📄 Template Library
+- **Template Management**: 템플릿 생성, 수정, 삭제
+- **Visibility Levels**: private, public, team
+- **Categories**: 템플릿 분류
+- **Search**: 이름으로 템플릿 검색
+- **UI**: 메인 네비게이션 > Templates, Settings > Templates
+
+## Database Schema Changes
+
+### New Tables
+- `voice_settings`: 음성 설정 저장
+- `plugins`: 설치된 플러그인 정보
+- `templates`: 템플릿 저장
+
+## API Changes
+
+### New Tauri Commands
+
+#### Voice
+- `init_stt(model: String) -> Result<String, String>`
+- `voice_transcribe(audio_data: Vec<u8>, language: String) -> Result<TranscriptionResult, String>`
+- `get_available_models() -> Result<Vec<String>, String>`
+- `init_tts(voice: String) -> Result<String, String>`
+- `voice_synthesize(text: String, language: String) -> Result<SynthesisResult, String>`
+- `voice_get_available_voices() -> Result<Vec<VoiceInfo>, String>`
+- `get_voice_settings() -> Result<VoiceSettings, String>`
+- `update_voice_settings(...) -> Result<(), String>`
+
+#### Plugins
+- `list_plugins() -> Result<Vec<Plugin>, String>`
+- `get_plugin(id: String) -> Result<Plugin, String>`
+- `install_plugin(...) -> Result<String, String>`
+- `uninstall_plugin(id: String) -> Result<String, String>`
+- `enable_plugin(id: String) -> Result<(), String>`
+- `disable_plugin(id: String) -> Result<(), String>`
+
+#### Templates
+- `list_templates() -> Result<Vec<Template>, String>`
+- `get_template(id: String) -> Result<Template, String>`
+- `create_template(...) -> Result<String, String>`
+- `update_template(...) -> Result<(), String>`
+- `delete_template(id: String) -> Result<(), String>`
+- `search_templates(query: String) -> Result<Vec<Template>, String>`
+
+#### Integrations
+- `test_database_connection(config: DatabaseConfig) -> Result<bool, String>`
+- `get_database_connection_string(name: String) -> Result<String, String>`
+- `validate_git_repository(path: String) -> Result<GitStatus, String>`
+- `get_git_status(path: String) -> Result<GitStatus, String>`
+- `get_git_current_commit(path: String) -> Result<String, String>`
+- `test_cloud_connection(config: CloudConfig) -> Result<bool, String>`
+- `list_cloud_objects(config: CloudConfig) -> Result<Vec<CloudObject>, String>`
+- `get_cloud_endpoint(provider: String) -> Result<String, String>`
+
+## Frontend Changes
+
+### New Stores
+- `stores/voiceStore.ts`: 음성 설정 및 STT/TTS 관리
+- `stores/pluginStore.ts`: 플러그인 관리
+- `stores/collaborationStore.ts`: 템플릿 및 협업 기능
+- `stores/integrationsStore.ts`: 외부 통합 관리
+
+### New Components
+- `components/voice/VoiceSettings.tsx`: 음성 설정 UI
+- `components/voice/VoiceButton.tsx`: 음성 입력 버튼
+- `components/plugins/PluginList.tsx`: 플러그인 목록
+- `components/collaboration/TemplateLibrary.tsx`: 템플릿 라이브러리
+- `components/collaboration/ExportDialog.tsx`: 내보내기 대화상자
+- `components/integrations/IntegrationsPanel.tsx`: 통합 패널
+
+### Updated Components
+- `components/settings/SettingsDialog.tsx`: Voice, Plugins, Templates, Integrations 탭 추가
+- `App.tsx`: Integrations, Templates 네비게이션 추가
+
+## Technical Details
+
+### Module Structure (src-tauri/src/)
+```
+voice/
+├── mod.rs       # VoiceSettings, TranscriptionResult, SynthesisResult
+├── stt.rs       # Speech-to-Text implementation (Whisper)
+└── tts.rs       # Text-to-Speech implementation (platform-specific)
+
+plugins/
+├── mod.rs       # Plugin types, permissions, state
+├── loader.rs    # Plugin loading and validation
+├── sandbox.rs   # Sandboxed execution environment
+└── api.rs       # Plugin API definitions
+
+collaboration/
+├── mod.rs       # Template, SharedWorkflow, ExportOptions
+├── templates.rs # TemplateManager implementation
+└── export_mod.rs # JSON/Markdown/HTML export
+
+integration/
+├── mod.rs       # Integration types, status
+├── database.rs  # PostgreSQL/MySQL connection
+├── cloud.rs     # AWS S3, GCS, Azure Blob
+└── git.rs       # Git repository operations
+```
+
+## Known Limitations
+
+1. **Voice**: Whisper 모델 다운로드 필요 (첫 실행 시)
+2. **Plugins**: 실행 중인 플러그인 중지 기능 미구현
+3. **Integrations**: 연결 테스트만 지원, 실제 데이터 전송 미구현
+4. **Templates**: 공유 기능은 UI만 구현됨
+
+## Migration Guide
+
+v0.3 → v0.4 업그레이드 시:
+1. `npm install`으로 새로운 의존성 설치
+2. `cd src-tauri && cargo build`로 Rust 백엔드 빌드
+3. 데이터베이스 마이그레이션 자동 수행 (voice_settings 테이블 생성)
+
+## Future Work (v0.5)
+- 실제 플러그인 실행 엔진
+- 통합 서비스 실제 데이터 연동
+- 템플릿 공유/가져오기 기능
+- 고급 음성 명령어
+
 ## 최근 완료된 작업
 
 ### MCP 통신 완료 (2025-02-18)
