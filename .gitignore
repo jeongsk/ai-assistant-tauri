@@ -35,3 +35,4 @@ dist-ssr
 .security-key
 logs/security/
 /src-tauri/binaries/
+coverage/
