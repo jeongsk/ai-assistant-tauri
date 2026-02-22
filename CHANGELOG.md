@@ -1,3 +1,32 @@
+## [0.6.0] - 2026-02-22
+
+### Added
+- **Agent Module**: Multimodal input processing, context management, sub-agent orchestration
+- **Workflow Module**: Visual workflow editor foundation, trigger system, execution engine
+- **Sync Module**: Cloud synchronization architecture, conflict resolution, offline queue
+- **Database Migrations**: v8 (workflows), v9 (voice profiles), v10 (sync tables)
+
+### Architecture
+- `src-tauri/src/agent/` - AI agent enhancement (multimodal, context, orchestrator)
+- `src-tauri/src/workflow/` - Workflow automation (store, engine, nodes, triggers)
+- `src-tauri/src/sync/` - Cloud sync (manager, conflict, offline)
+
+---
+
+## [0.5.0] - 2026-02-22
+
+### Added
+- **WASM Plugin Runtime**: Wasmtime v22+ with WASI preview1 support
+- **Integration Services**: PostgreSQL/MySQL query execution, Git operations, AWS S3
+- **Template Sharing**: JSON import/export, versioning, team sharing
+- **Voice Commands**: Voice command parsing (EN/KO), AgentRuntime routing
+
+### Changed
+- All 90 tests passing, build verification complete
+- Security fixes: Path traversal prevention, non-UTF-8 path handling
+
+---
+
 ## [0.4.0] - 2026-02-18
 
 ### Added

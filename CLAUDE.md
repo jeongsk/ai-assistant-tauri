@@ -83,6 +83,9 @@ cargo test       # Rust 테스트
 | `src-tauri/src/lib.rs` | Tauri commands 정의 |
 | `src-tauri/src/scheduler/` | Cron 작업 스케줄링 및 실행 |
 | `src-tauri/src/db/mod.rs` | SQLite 데이터베이스 연산, Cron 작업 실행 |
+| `src-tauri/src/agent/` | v0.6: 멀티모달, 컨텍스트 관리, 서브에이전트 오케스트레이션 |
+| `src-tauri/src/workflow/` | v0.6: 워크플로우 저장소, 실행 엔진, 노드, 트리거 |
+| `src-tauri/src/sync/` | v0.6: 동기화 관리자, 충돌 해결, 오프라인 큐 |
 | `agent-runtime/src/index.ts` | JSON-RPC 요청 처리, 초기화 |
 | `agent-runtime/src/providers/base.ts` | Provider 인터페이스 (Message, ChatOptions, ChatResponse) |
 | `agent-runtime/src/providers/router.ts` | 다중 LLM 제공자 라우팅 |
@@ -111,9 +114,10 @@ cargo test       # Rust 테스트
 
 - **MVP (v0.1)** ✅: 기본 채팅, 폴더 권한, 파일 R/W, Ollama, 설정 UI, Agent Runtime 통합
 - **v0.2** ✅: 스킬 시스템, 레시피 엔진, Browser MCP, 메모리 지속성
-- **v0.3** ✅: 서브에이전트, 다중 제공자 라우팅, **Cron 작업 ✅**, **Tauri 통합 ✅**, **Agent Runtime 연동 ✅**, **DB 영속성 ✅**
-- **v0.4** ✅: 메모리 시스템 ✅, 음성 지원 ✅, 플러그인 시스템 ✅, 통합 기능 ✅, 협업 기능 ✅
-- **v0.5** ✅: WASM 플러그인 런타임 ✅, 통합 서비스 연동 ✅, 템플릿 공유 ✅, 음성 명령어 ✅, 테스트 완료 ✅
+- **v0.3** ✅: 서브에이전트, 다중 제공자 라우팅, Cron 작업, Tauri 통합, Agent Runtime 연동, DB 영속성
+- **v0.4** ✅: 메모리 시스템, 음성 지원, 플러그인 시스템, 통합 기능, 협업 기능
+- **v0.5** ✅: WASM 플러그인 런타임, 통합 서비스 연동, 템플릿 공유, 음성 명령어, 테스트 완료
+- **v0.6** 🚧: AI 에이전트 고도화, 워크플로우 자동화, 고급 음성, 클라우드 동기화 (기초 구조 완료)
 
 ---
 
