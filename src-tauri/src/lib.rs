@@ -1,7 +1,7 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 mod db;
 mod sidecar;
-mod voice;
+pub mod voice;
 mod plugins;
 mod collaboration;
 mod scheduler;
