@@ -41,31 +41,39 @@ pub(crate) struct SidecarProcess {
 
 impl SidecarProcess {
     fn spawn() -> Result<Self, String> {
-        // Find the agent-runtime binary
-        // In development: target/debug/agent-runtime
+        // Find the agent-runtime directory
+        // In development: agent-runtime/dist/index.js
         // In production: app bundle binaries folder
         let exe_path = std::env::current_exe()
             .map_err(|e| format!("Failed to get exe path: {}", e))?;
 
-        let bin_path = exe_path
-            .parent()
-            .map(|p| p.join("agent-runtime"))
-            .filter(|p| p.exists())
-            .or_else(|| {
-                // Try parent/binaries for production build
-                exe_path
-                    .parent()
-                    .and_then(|p| p.parent())
-                    .map(|p| p.join("binaries").join("agent-runtime"))
-            })
-            .ok_or_else(|| "Failed to determine binaries path".to_string())?;
+        // Look for agent-runtime in project structure
+        // exe_path: .../src-tauri/target/debug/ai-assistant-tauri
+        // Need 4 parents to reach project root: debug -> target -> src-tauri -> project-root
+        let script_path = exe_path
+            .parent()      // debug
+            .and_then(|p| p.parent())  // target
+            .and_then(|p| p.parent())  // src-tauri
+            .and_then(|p| p.parent())  // project root
+            .map(|p| p.join("agent-runtime").join("dist").join("index.js"))
+            .filter(|p| p.exists());
 
-        if !bin_path.exists() {
-            return Err(format!("Agent runtime binary not found at {:?}", bin_path));
-        }
+        let (bin_path, args): (std::path::PathBuf, Vec<String>) = if let Some(script) = script_path {
+            (std::path::PathBuf::from("node"), vec![script.to_str().unwrap().to_string()])
+        } else {
+            // Try production path
+            let prod_path = exe_path
+                .parent()
+                .and_then(|p| p.parent())
+                .map(|p| p.join("binaries").join("agent-runtime"))
+                .filter(|p| p.exists())
+                .ok_or_else(|| "Failed to find agent-runtime. Build it with: cd agent-runtime && npm run build".to_string())?;
+            (prod_path, vec![])
+        };
 
         // Spawn the process
         let mut child = Command::new(&bin_path)
+            .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -201,6 +209,40 @@ pub async fn agent_chat(
     messages: Vec<super::Message>,
     provider: Option<String>,
 ) -> Result<super::ChatResponse, String> {
+    // Auto-initialize if not already initialized
+    {
+        let state_guard = state.lock()
+            .map_err(|e| format!("Failed to acquire lock: {}", e))?;
+
+        if !state_guard.is_initialized() {
+            drop(state_guard);
+
+            // Try to initialize
+            let mut process = match SidecarProcess::spawn() {
+                Ok(p) => p,
+                Err(e) => {
+                    tracing::warn!("Failed to spawn agent-runtime: {}", e);
+                    return Ok(super::ChatResponse {
+                        content: String::new(),
+                        error: Some(format!("Agent runtime not available: {}", e)),
+                    });
+                }
+            };
+
+            if let Err(e) = process.wait_for_ready() {
+                tracing::warn!("Agent runtime not ready: {}", e);
+                return Ok(super::ChatResponse {
+                    content: String::new(),
+                    error: Some(format!("Agent runtime not ready: {}", e)),
+                });
+            }
+
+            let state_guard = state.lock()
+                .map_err(|e| format!("Failed to acquire lock: {}", e))?;
+            state_guard.set_initialized(process);
+        }
+    }
+
     let state_guard = state.lock()
         .map_err(|e| format!("Failed to acquire lock: {}", e))?;
 

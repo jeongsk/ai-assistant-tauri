@@ -276,14 +276,14 @@ async function handleExecuteSkill(params: any) {
     // Build skill-specific prompt
     const skillPrompt = `You are executing the skill "${skillId}".
 
-${input || 'No specific input provided.'}
+${input || "No specific input provided."}
 
-${variables ? `Variables: ${JSON.stringify(variables)}` : ''}
+${variables ? `Variables: ${JSON.stringify(variables)}` : ""}
 
 Execute this skill and provide the result.`;
 
     const response: ChatResponse = await provider.chat([
-      { role: 'user', content: skillPrompt },
+      { role: "user", content: skillPrompt },
     ]);
 
     return {
@@ -340,11 +340,13 @@ async function handleExecutePrompt(params: any) {
       : getActiveProvider();
 
     if (!providerToUse) {
-      throw new Error(`Provider not found: ${providerOverride || activeProvider}`);
+      throw new Error(
+        `Provider not found: ${providerOverride || activeProvider}`,
+      );
     }
 
     const response: ChatResponse = await providerToUse.chat([
-      { role: 'user', content: prompt },
+      { role: "user", content: prompt },
     ]);
 
     return {
@@ -396,6 +398,30 @@ process.on("SIGINT", async () => {
   await handleShutdown();
   process.exit(0);
 });
+
+// Initialize default Ollama provider
+function initializeDefaultProvider() {
+  // Auto-configure Ollama as default provider if available
+  const ollamaConfig: ProviderConfig = {
+    type: "ollama",
+    apiKey: "", // Ollama doesn't need API key
+    baseUrl: "http://localhost:11434",
+    model: "llama3", // Default model, can be overridden
+    enabled: true,
+  };
+
+  try {
+    const provider = new OllamaProvider(ollamaConfig);
+    providers.set("ollama", provider);
+    activeProvider = "ollama";
+    logger.info("Auto-initialized Ollama provider as default");
+  } catch (error) {
+    logger.error("Failed to initialize default Ollama provider", error);
+  }
+}
+
+// Initialize default provider on startup
+initializeDefaultProvider();
 
 // Signal ready
 logger.info("Agent runtime started");
