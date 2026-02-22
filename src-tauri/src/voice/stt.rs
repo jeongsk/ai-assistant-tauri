@@ -410,7 +410,7 @@ impl SttEngine {
         for segment in state.as_iter() {
             // Use to_str_lossy() to handle potential invalid UTF-8
             let segment_text = segment.to_str_lossy()
-                .unwrap_or_else(|_| std::borrow::Cow::Borrowed(""));
+                .unwrap_or_default();
 
             let start = segment.start_timestamp();  // Returns i64 in centiseconds
             let end = segment.end_timestamp();       // Returns i64 in centiseconds

@@ -96,7 +96,7 @@ pub fn get_git_current_commit(path: String) -> Result<String, String> {
     #[cfg(feature = "git")]
     {
         let _ops = GitOperations::open(&path)?;
-        let repo = git2::Repository::open(&std::path::PathBuf::from(&path))
+        let repo = git2::Repository::open(std::path::PathBuf::from(&path))
             .map_err(|e| format!("Failed to open repo: {}", e))?;
         let head = repo.head()
             .map_err(|e| format!("Failed to get HEAD: {}", e))?;

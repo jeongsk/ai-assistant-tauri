@@ -61,64 +61,58 @@ struct CommandPattern {
 impl VoiceCommandParser {
     /// Create a new voice command parser
     pub fn new() -> Self {
-        let mut patterns = Vec::new();
-
         // English patterns
-        patterns.push(CommandPattern {
-            pattern: "execute (.+) skill".to_string(),
-            action: VoiceAction::ExecuteSkill { skill_name: "".to_string() },
-            param_names: vec!["skill_name".to_string()],
-        });
-
-        patterns.push(CommandPattern {
-            pattern: "run (.+) recipe".to_string(),
-            action: VoiceAction::RunRecipe { recipe_name: "".to_string() },
-            param_names: vec!["recipe_name".to_string()],
-        });
-
-        patterns.push(CommandPattern {
-            pattern: "send (.+) message".to_string(),
-            action: VoiceAction::SendMessage { content: "".to_string() },
-            param_names: vec!["content".to_string()],
-        });
-
-        patterns.push(CommandPattern {
-            pattern: "open (.+)".to_string(),
-            action: VoiceAction::OpenFeature { feature: "".to_string() },
-            param_names: vec!["feature".to_string()],
-        });
-
-        patterns.push(CommandPattern {
-            pattern: "search for (.+)".to_string(),
-            action: VoiceAction::Search { query: "".to_string() },
-            param_names: vec!["query".to_string()],
-        });
+        let patterns = vec![
+            CommandPattern {
+                pattern: "execute (.+) skill".to_string(),
+                action: VoiceAction::ExecuteSkill { skill_name: "".to_string() },
+                param_names: vec!["skill_name".to_string()],
+            },
+            CommandPattern {
+                pattern: "run (.+) recipe".to_string(),
+                action: VoiceAction::RunRecipe { recipe_name: "".to_string() },
+                param_names: vec!["recipe_name".to_string()],
+            },
+            CommandPattern {
+                pattern: "send (.+) message".to_string(),
+                action: VoiceAction::SendMessage { content: "".to_string() },
+                param_names: vec!["content".to_string()],
+            },
+            CommandPattern {
+                pattern: "open (.+)".to_string(),
+                action: VoiceAction::OpenFeature { feature: "".to_string() },
+                param_names: vec!["feature".to_string()],
+            },
+            CommandPattern {
+                pattern: "search for (.+)".to_string(),
+                action: VoiceAction::Search { query: "".to_string() },
+                param_names: vec!["query".to_string()],
+            },
+        ];
 
         // Korean patterns
-        let mut ko_patterns = Vec::new();
-        ko_patterns.push(CommandPattern {
-            pattern: "(.+) 스킬 실행".to_string(),
-            action: VoiceAction::ExecuteSkill { skill_name: "".to_string() },
-            param_names: vec!["skill_name".to_string()],
-        });
-
-        ko_patterns.push(CommandPattern {
-            pattern: "(.+) 레시피 실행".to_string(),
-            action: VoiceAction::RunRecipe { recipe_name: "".to_string() },
-            param_names: vec!["recipe_name".to_string()],
-        });
-
-        ko_patterns.push(CommandPattern {
-            pattern: "(.+) 메시지 보내".to_string(),
-            action: VoiceAction::SendMessage { content: "".to_string() },
-            param_names: vec!["content".to_string()],
-        });
-
-        ko_patterns.push(CommandPattern {
-            pattern: "(.+) 열기".to_string(),
-            action: VoiceAction::OpenFeature { feature: "".to_string() },
-            param_names: vec!["feature".to_string()],
-        });
+        let ko_patterns = vec![
+            CommandPattern {
+                pattern: "(.+) 스킬 실행".to_string(),
+                action: VoiceAction::ExecuteSkill { skill_name: "".to_string() },
+                param_names: vec!["skill_name".to_string()],
+            },
+            CommandPattern {
+                pattern: "(.+) 레시피 실행".to_string(),
+                action: VoiceAction::RunRecipe { recipe_name: "".to_string() },
+                param_names: vec!["recipe_name".to_string()],
+            },
+            CommandPattern {
+                pattern: "(.+) 메시지 보내".to_string(),
+                action: VoiceAction::SendMessage { content: "".to_string() },
+                param_names: vec!["content".to_string()],
+            },
+            CommandPattern {
+                pattern: "(.+) 열기".to_string(),
+                action: VoiceAction::OpenFeature { feature: "".to_string() },
+                param_names: vec!["feature".to_string()],
+            },
+        ];
 
         let mut language_patterns = HashMap::new();
         language_patterns.insert("en".to_string(), patterns.clone());
@@ -345,6 +339,12 @@ impl VoiceRouter {
     /// Find a recipe by name
     fn find_recipe(&self, name: &str) -> Option<&RecipeInfo> {
         self.recipes.values().find(|r| r.id == name || r.name == name)
+    }
+}
+
+impl Default for VoiceRouter {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

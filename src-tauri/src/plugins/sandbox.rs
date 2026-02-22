@@ -52,6 +52,12 @@ impl ResourceTracker {
     }
 }
 
+impl Default for ResourceTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PluginSandbox {
     pub fn new(context: PluginContext) -> Self {
         Self {

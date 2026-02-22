@@ -125,8 +125,7 @@ pub fn synthesize(text: String, language: String) -> Result<SynthesisResult, Str
     let word_count = text.split_whitespace().count() as u64;
     let char_count = text.chars().count() as u64;
     let duration_ms = ((word_count * 60000 / 150) + (char_count * 10))
-        .max(500) // Minimum 500ms
-        .min(60000); // Maximum 60 seconds
+        .clamp(500, 60_000); // Clamp between 500ms and 60 seconds
 
     // Update state
     {
@@ -288,7 +287,7 @@ fn generate_silent_wav(sample_rate: u32, duration_ms: u64) -> Result<Vec<u8>, St
     wav.extend_from_slice(&1u16.to_le_bytes()); // audio format (PCM)
     wav.extend_from_slice(&1u16.to_le_bytes()); // channels (mono)
     wav.extend_from_slice(&sample_rate.to_le_bytes()); // sample rate
-    wav.extend_from_slice(&((sample_rate * 2)).to_le_bytes()); // byte rate
+    wav.extend_from_slice(&(sample_rate * 2).to_le_bytes()); // byte rate
     wav.extend_from_slice(&2u16.to_le_bytes()); // block align
     wav.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
 
@@ -362,7 +361,7 @@ fn convert_aiff_to_wav(aiff_data: &[u8], sample_rate: u32) -> Result<Vec<u8>, St
     wav.extend_from_slice(&1u16.to_le_bytes()); // PCM
     wav.extend_from_slice(&1u16.to_le_bytes()); // mono
     wav.extend_from_slice(&sample_rate.to_le_bytes());
-    wav.extend_from_slice(&((sample_rate * 2)).to_le_bytes()); // byte rate
+    wav.extend_from_slice(&(sample_rate * 2).to_le_bytes()); // byte rate
     wav.extend_from_slice(&2u16.to_le_bytes()); // block align
     wav.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
 
@@ -439,18 +438,18 @@ pub fn is_tts_available() -> bool {
     #[cfg(target_os = "macos")]
     {
         // On macOS, say command should always be available
-        return std::process::Command::new("say")
+        std::process::Command::new("say")
             .arg("-v")
             .arg("?")
             .output()
             .map(|o| o.status.success())
-            .unwrap_or(false);
+            .unwrap_or(false)
     }
 
     #[cfg(target_os = "windows")]
     {
         // On Windows, SAPI should always be available
-        return true;
+        true
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
@@ -723,6 +722,6 @@ mod tests {
     fn test_get_synthesis_progress() {
         let progress = get_synthesis_progress();
         // Progress should be between 0.0 and 1.0
-        assert!(progress >= 0.0 && progress <= 1.0);
+        assert!((0.0..=1.0).contains(&progress));
     }
 }

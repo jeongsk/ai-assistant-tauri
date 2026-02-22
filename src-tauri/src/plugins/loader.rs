@@ -38,7 +38,7 @@ impl PluginLoader {
     }
 
     /// Load plugin from directory
-    pub fn load_from_dir(&mut self, path: &PathBuf) -> Result<PluginManifest, String> {
+    pub fn load_from_dir(&mut self, path: &std::path::Path) -> Result<PluginManifest, String> {
         let manifest_path = path.join("plugin.json");
 
         // Read manifest
@@ -143,7 +143,7 @@ impl PluginLoader {
 }
 
 /// Discover plugins in directory
-pub fn discover_plugins(dir: &PathBuf) -> Vec<PathBuf> {
+pub fn discover_plugins(dir: &std::path::Path) -> Vec<PathBuf> {
     let mut plugins = Vec::new();
 
     if let Ok(entries) = std::fs::read_dir(dir) {

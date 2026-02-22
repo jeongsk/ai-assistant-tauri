@@ -250,6 +250,7 @@ impl PluginExecutor {
     }
 
     /// Execute an action in a plugin
+    #[allow(clippy::await_holding_lock)]
     pub async fn execute_action(
         &mut self,
         plugin_id: &str,
@@ -402,7 +403,7 @@ impl PluginExecutor {
             .unwrap_or("call");
         let args = params.get("args")
             .and_then(|v| v.as_array())
-            .map(|v| v.clone())
+            .cloned()
             .unwrap_or_default();
 
         // Call WASM function
@@ -426,7 +427,7 @@ impl PluginExecutor {
         // Update resource monitor
         let mut monitor = self.monitor.lock().unwrap();
         monitor.update_from_wasm(&instance_id, wasm_result.fuel_consumed,
-            wasm_result.execution_time_ms as u64);
+            wasm_result.execution_time_ms);
 
         ExecutionResult {
             success: wasm_result.success,

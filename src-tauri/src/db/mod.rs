@@ -766,6 +766,7 @@ pub fn create_sub_agent(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn update_sub_agent(
     db: tauri::State<'_, DbState>,
     id: String,
@@ -1617,6 +1618,7 @@ pub fn get_voice_settings(db: tauri::State<'_, DbState>) -> Result<Option<VoiceS
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn update_voice_settings(
     db: tauri::State<'_, DbState>,
     id: String,

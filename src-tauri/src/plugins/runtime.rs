@@ -423,11 +423,8 @@ impl WasmRuntime {
             };
 
             // Get fuel consumed (fuel_consumed() method not available, use 0 for now)
-            let fuel_consumed = if self.config.enable_fuel {
-                0  // TODO: Implement fuel tracking when API is available
-            } else {
-                0
-            };
+            // TODO: Implement fuel tracking when API is available
+            let fuel_consumed = 0;
 
             // Calculate memory size (inline to avoid borrow checker issues)
             let memory_used = match instance.get_memory(&mut *store, "memory") {

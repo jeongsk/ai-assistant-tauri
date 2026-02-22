@@ -4,9 +4,9 @@
  * Handles JSON-RPC communication over stdio with MCP servers.
  */
 
-import { spawn, ChildProcess } from 'child_process';
-import { createInterface } from 'readline';
-import { EventEmitter } from 'events';
+import { spawn, ChildProcess } from "child_process";
+import { createInterface } from "readline";
+import { EventEmitter } from "events";
 import {
   JSONRPCRequest,
   JSONRPCResponse,
@@ -15,8 +15,8 @@ import {
   MCPError,
   MCPConnectionError,
   MCPTimeoutError,
-} from './types.js';
-import { logger } from '../utils/logger.js';
+} from "./types.js";
+import { logger } from "../utils/logger.js";
 
 export interface StdioTransportOptions {
   timeout?: number;
@@ -34,7 +34,10 @@ export class MCPStdioTransport extends EventEmitter {
   private readonly maxBufferSize: number;
   private readonly env: Record<string, string>;
 
-  constructor(private readonly config: MCPServerConfig, options: StdioTransportOptions = {}) {
+  constructor(
+    private readonly config: MCPServerConfig,
+    options: StdioTransportOptions = {},
+  ) {
     super();
     this.timeout = options.timeout ?? 30000;
     this.maxBufferSize = options.maxBufferSize ?? 10 * 1024 * 1024; // 10MB
@@ -46,14 +49,14 @@ export class MCPStdioTransport extends EventEmitter {
    */
   async connect(): Promise<void> {
     if (this.connected) {
-      throw new MCPError('Already connected', -32603);
+      throw new MCPError("Already connected", -32603);
     }
 
-    logger.info('Connecting to MCP server', { name: this.config.name });
+    logger.info("Connecting to MCP server", { name: this.config.name });
 
     return new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
-        reject(new MCPTimeoutError('Connection timeout', this.timeout));
+        reject(new MCPTimeoutError("Connection timeout", this.timeout));
       }, this.timeout);
 
       let rejected = false;
@@ -71,11 +74,13 @@ export class MCPStdioTransport extends EventEmitter {
         this.process = spawn(this.config.command, this.config.args || [], {
           env: { ...process.env, ...this.env },
           cwd: this.config.cwd,
-          stdio: ['pipe', 'pipe', 'pipe'],
+          stdio: ["pipe", "pipe", "pipe"],
         });
 
         if (!this.process.stdout || !this.process.stdin) {
-          rejectWithError(new MCPConnectionError('Failed to create stdio streams'));
+          rejectWithError(
+            new MCPConnectionError("Failed to create stdio streams"),
+          );
           return;
         }
 
@@ -87,37 +92,49 @@ export class MCPStdioTransport extends EventEmitter {
         });
 
         // Handle incoming messages
-        this.rl.on('line', (line: string) => {
+        this.rl.on("line", (line: string) => {
           this.handleMessage(line);
         });
 
         // Handle process errors - reject the connect promise
-        this.process.once('error', (error) => {
-          logger.error('MCP server process error', { name: this.config.name, error });
-          const connError = new MCPConnectionError('Process error', error);
-          this.emit('error', connError);
+        this.process.once("error", (error) => {
+          logger.error("MCP server process error", {
+            name: this.config.name,
+            error,
+          });
+          const connError = new MCPConnectionError("Process error", error);
+          this.emit("error", connError);
           rejectWithError(connError);
         });
 
         // Handle process exit - reject if exit happens too soon
-        this.process.once('exit', (code, signal) => {
-          logger.info('MCP server process exited', { name: this.config.name, code, signal });
+        this.process.once("exit", (code, signal) => {
+          logger.info("MCP server process exited", {
+            name: this.config.name,
+            code,
+            signal,
+          });
           this.connected = false;
-          this.emit('disconnect', { code, signal });
+          this.emit("disconnect", { code, signal });
 
           // Only reject if we haven't successfully connected yet
           if (!rejected) {
-            rejectWithError(new MCPConnectionError(`Process exited with code ${code}`));
+            rejectWithError(
+              new MCPConnectionError(`Process exited with code ${code}`),
+            );
           }
         });
 
         // Handle stderr
         if (this.process.stderr) {
-          this.process.stderr.on('data', (data) => {
+          this.process.stderr.on("data", (data) => {
             const message = data.toString().trim();
             if (message) {
-              logger.debug('MCP server stderr', { name: this.config.name, message });
-              this.emit('stderr', message);
+              logger.debug("MCP server stderr", {
+                name: this.config.name,
+                message,
+              });
+              this.emit("stderr", message);
             }
           });
         }
@@ -128,13 +145,17 @@ export class MCPStdioTransport extends EventEmitter {
           if (rejected) return;
           clearTimeout(timeoutId);
           this.connected = true;
-          this.emit('connected');
-          logger.info('Connected to MCP server', { name: this.config.name });
+          this.emit("connected");
+          logger.info("Connected to MCP server", { name: this.config.name });
           resolve();
         }, 50);
-
       } catch (error: any) {
-        rejectWithError(new MCPConnectionError(`Failed to spawn process: ${error.message}`, error));
+        rejectWithError(
+          new MCPConnectionError(
+            `Failed to spawn process: ${error.message}`,
+            error,
+          ),
+        );
       }
     });
   }
@@ -147,11 +168,11 @@ export class MCPStdioTransport extends EventEmitter {
       return;
     }
 
-    logger.info('Disconnecting from MCP server', { name: this.config.name });
+    logger.info("Disconnecting from MCP server", { name: this.config.name });
 
     // Try graceful shutdown
     try {
-      await this.request('shutdown', undefined, 5000);
+      await this.request("shutdown", undefined, 5000);
     } catch {
       // Ignore shutdown errors
     }
@@ -169,10 +190,13 @@ export class MCPStdioTransport extends EventEmitter {
     }
 
     if (this.process) {
-      this.process.kill('SIGTERM');
+      const proc = this.process;
+      // Remove all listeners to prevent async logging after cleanup
+      proc.removeAllListeners();
+      proc.kill("SIGTERM");
       setTimeout(() => {
-        if (this.process && !this.process.killed) {
-          this.process.kill('SIGKILL');
+        if (!proc.killed) {
+          proc.kill("SIGKILL");
         }
       }, 5000).unref();
       this.process = null;
@@ -182,7 +206,7 @@ export class MCPStdioTransport extends EventEmitter {
 
     // Reject all pending requests
     for (const [id, pending] of this.pendingRequests) {
-      pending.reject(new MCPError('Connection closed', -32603));
+      pending.reject(new MCPError("Connection closed", -32603));
     }
     this.pendingRequests.clear();
   }
@@ -193,10 +217,10 @@ export class MCPStdioTransport extends EventEmitter {
   async request<T = any>(
     method: string,
     params?: any,
-    timeout?: number
+    timeout?: number,
   ): Promise<T> {
     if (!this.connected) {
-      throw new MCPError('Not connected', -32603);
+      throw new MCPError("Not connected", -32603);
     }
 
     const id = ++this.requestId;
@@ -205,13 +229,15 @@ export class MCPStdioTransport extends EventEmitter {
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pendingRequests.delete(id);
-        reject(new MCPTimeoutError(`Request timeout: ${method}`, requestTimeout));
+        reject(
+          new MCPTimeoutError(`Request timeout: ${method}`, requestTimeout),
+        );
       }, requestTimeout);
 
       this.pendingRequests.set(id, { resolve, reject, timer, method });
 
       const message: JSONRPCRequest = {
-        jsonrpc: '2.0',
+        jsonrpc: "2.0",
         id,
         method,
         params,
@@ -226,11 +252,11 @@ export class MCPStdioTransport extends EventEmitter {
    */
   notify(method: string, params?: any): void {
     if (!this.connected) {
-      throw new MCPError('Not connected', -32603);
+      throw new MCPError("Not connected", -32603);
     }
 
     const message: JSONRPCNotification = {
-      jsonrpc: '2.0',
+      jsonrpc: "2.0",
       method,
       params,
     };
@@ -243,16 +269,19 @@ export class MCPStdioTransport extends EventEmitter {
    */
   private send(message: JSONRPCRequest | JSONRPCNotification): void {
     if (!this.process || !this.process.stdin) {
-      throw new MCPError('No process available', -32603);
+      throw new MCPError("No process available", -32603);
     }
 
     const json = JSON.stringify(message);
-    logger.debug('Sending to MCP server', { name: this.config.name, message });
+    logger.debug("Sending to MCP server", { name: this.config.name, message });
 
     try {
-      this.process.stdin.write(json + '\n');
+      this.process.stdin.write(json + "\n");
     } catch (error: any) {
-      throw new MCPConnectionError(`Failed to send message: ${error.message}`, error);
+      throw new MCPConnectionError(
+        `Failed to send message: ${error.message}`,
+        error,
+      );
     }
   }
 
@@ -264,20 +293,20 @@ export class MCPStdioTransport extends EventEmitter {
       return;
     }
 
-    logger.debug('Received from MCP server', { name: this.config.name, line });
+    logger.debug("Received from MCP server", { name: this.config.name, line });
 
     let message: JSONRPCResponse | JSONRPCNotification;
 
     try {
       message = JSON.parse(line);
     } catch (error) {
-      logger.error('Failed to parse MCP message', { line, error });
-      this.emit('error', new MCPError('Invalid JSON', -32700));
+      logger.error("Failed to parse MCP message", { line, error });
+      this.emit("error", new MCPError("Invalid JSON", -32700));
       return;
     }
 
     // Check for response
-    if ('id' in message) {
+    if ("id" in message) {
       this.handleResponse(message as JSONRPCResponse);
     } else {
       this.handleNotification(message as JSONRPCNotification);
@@ -291,7 +320,7 @@ export class MCPStdioTransport extends EventEmitter {
     const pending = this.pendingRequests.get(response.id);
 
     if (!pending) {
-      logger.warn('Received response for unknown request', { id: response.id });
+      logger.warn("Received response for unknown request", { id: response.id });
       return;
     }
 
@@ -303,8 +332,8 @@ export class MCPStdioTransport extends EventEmitter {
         new MCPError(
           response.error.message,
           response.error.code,
-          response.error.data
-        )
+          response.error.data,
+        ),
       );
     } else {
       pending.resolve(response.result);
@@ -315,28 +344,28 @@ export class MCPStdioTransport extends EventEmitter {
    * Handle a JSON-RPC notification
    */
   private handleNotification(notification: JSONRPCNotification): void {
-    logger.debug('Received notification', { method: notification.method });
+    logger.debug("Received notification", { method: notification.method });
 
     // Emit notifications as events
     switch (notification.method) {
-      case 'notifications/initialized':
-        this.emit('initialized');
+      case "notifications/initialized":
+        this.emit("initialized");
         break;
 
-      case 'notifications/cancelled':
-        this.emit('cancelled', notification.params);
+      case "notifications/cancelled":
+        this.emit("cancelled", notification.params);
         break;
 
-      case 'notifications/progress':
-        this.emit('progress', notification.params);
+      case "notifications/progress":
+        this.emit("progress", notification.params);
         break;
 
-      case 'notifications/message':
-        this.emit('message', notification.params);
+      case "notifications/message":
+        this.emit("message", notification.params);
         break;
 
       default:
-        this.emit('notification', notification);
+        this.emit("notification", notification);
     }
   }
 

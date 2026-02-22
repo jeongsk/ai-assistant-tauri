@@ -71,11 +71,11 @@ fn perform_merge(
                 repo.cleanup_state()
                     .map_err(|e| format!("Failed to cleanup merge: {}", e))?;
 
-                let conflicts = get_conflicts(&repo)?;
+                let conflicts = get_conflicts(repo)?;
 
                 return Ok(GitOperationResult {
                     success: false,
-                    result: Some(format!("Merge conflicts detected")),
+                    result: Some("Merge conflicts detected".to_string()),
                     error: Some(format!("{} files have conflicts:\n{}", conflicts.len(), conflicts.join("\n"))),
                     execution_time_ms: start.elapsed().as_millis() as u64,
                 });
@@ -116,7 +116,7 @@ fn perform_merge(
 
                 Ok(GitOperationResult {
                     success: false,
-                    result: Some(format!("Merge conflicts detected")),
+                    result: Some("Merge conflicts detected".to_string()),
                     error: Some(format!("Automatic merge failed: {}", e)),
                     execution_time_ms: start.elapsed().as_millis() as u64,
                 })
@@ -245,7 +245,7 @@ impl GitOperations {
 
         // Stage all changes
         let pathspec = ".";
-        index.update_all(&[pathspec], None)
+        index.update_all([pathspec], None)
             .map_err(|e| format!("Failed to stage files: {}", e))?;
 
         let tree_id = index.write_tree()

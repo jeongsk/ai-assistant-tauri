@@ -239,14 +239,13 @@ impl DatabasePoolManager {
         // Process results
         for row in &rows {
             // Get column names from first row
-            if columns.is_empty() && row.len() > 0 {
+            if columns.is_empty() && !row.is_empty() {
                 columns = (0..row.len())
                     .map(|i| format!("column_{}", i))
                     .collect();
             }
 
-            let mut row_values = Vec::new();
-            row_values.push(self.convert_mysql_value(row));
+            let row_values = vec![self.convert_mysql_value(row)];
             result_rows.push(row_values);
         }
 
@@ -270,25 +269,17 @@ impl DatabasePoolManager {
     fn convert_mysql_value(&self, value: &mysql_async::Row) -> serde_json::Value {
         // mysql_async 0.34 uses Option<T> return from get() with 2 generic args
         // Try to get value as String first (index 0)
-        if let Some(val) = value.get::<Option<String>, _>(0) {
-            if let Some(v) = val {
-                return serde_json::json!(v);
-            }
+        if let Some(Some(v)) = value.get::<Option<String>, _>(0) {
+            return serde_json::json!(v);
         }
-        if let Some(val) = value.get::<Option<i64>, _>(0) {
-            if let Some(v) = val {
-                return serde_json::json!(v);
-            }
+        if let Some(Some(v)) = value.get::<Option<i64>, _>(0) {
+            return serde_json::json!(v);
         }
-        if let Some(val) = value.get::<Option<f64>, _>(0) {
-            if let Some(v) = val {
-                return serde_json::json!(v);
-            }
+        if let Some(Some(v)) = value.get::<Option<f64>, _>(0) {
+            return serde_json::json!(v);
         }
-        if let Some(val) = value.get::<Option<bool>, _>(0) {
-            if let Some(v) = val {
-                return serde_json::json!(v);
-            }
+        if let Some(Some(v)) = value.get::<Option<bool>, _>(0) {
+            return serde_json::json!(v);
         }
         serde_json::Value::Null
     }

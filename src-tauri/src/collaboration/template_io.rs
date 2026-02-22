@@ -184,7 +184,7 @@ mod tests {
 
     #[test]
     fn test_validate_template_invalid_visibility() {
-        let mut template = Template {
+        let template = Template {
             id: "test".to_string(),
             name: "Test".to_string(),
             category: "test".to_string(),

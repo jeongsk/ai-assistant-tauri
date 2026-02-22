@@ -395,6 +395,7 @@ pub struct ExecutionResult {
 }
 
 /// Job executor - handles actual execution of different job types
+#[allow(clippy::type_complexity)]
 pub struct JobExecutor {
     context: ExecutionContext,
     running_jobs: Arc<Mutex<HashMap<String, tokio::task::JoinHandle<(String, ExecutionResult)>>>>,

@@ -1,6 +1,7 @@
 // Marketplace integration tests
 
 #[cfg(test)]
+#[allow(clippy::module_inception)]
 mod tests {
     use super::super::*;
     use crate::marketplace::{MarketplaceItem, MarketplaceItemType, MarketplacePrice, MarketplaceFilters, MarketplaceListing};

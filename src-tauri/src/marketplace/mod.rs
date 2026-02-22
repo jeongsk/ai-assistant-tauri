@@ -12,6 +12,7 @@ mod tests;
 // Re-export commonly used types from submodules
 pub use store::MarketplaceStore;
 pub use install::MarketplaceInstaller;
+#[allow(unused_imports)]
 pub use listing::MarketplaceListing;
 
 

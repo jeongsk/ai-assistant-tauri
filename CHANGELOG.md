@@ -1,3 +1,62 @@
+## [0.4.0] - 2026-02-18
+
+### Added
+- Memory system for persistent context across conversations
+- Voice input and output capabilities
+- Plugin system for extending functionality
+- External service integrations
+- Real-time collaboration features
+
+### Changed
+- Added auto-claude entries to .gitignore for better project hygiene
+
+---
+
+## [0.3.0] - 2026-02-18
+
+### Added
+- Sub-agents support for specialized task handling
+- Intelligent routing system for optimal task distribution
+- Marketplace for discovering and installing extensions
+- Scheduled tasks (Cron) for automated operations
+- Browser MCP with rate limiting and settings UI
+
+---
+
+## [0.2.0] - 2026-02-18
+
+### Added
+- Skill system for defining agent capabilities
+- Recipe system for reusable task workflows
+- SQLite database for persistent data storage
+- Ollama support for local LLM integration
+- Provider sync for keeping LLM providers up to date
+- Improved settings UI for better configuration
+- TaskHistory component for tracking agent activities
+- FileExplorer component for file navigation
+
+### Changed
+- Improved agent runtime JSON-RPC handling
+- Enhanced sidecar management and UI
+
+---
+
+## [0.1.0] - 2026-02-18
+
+### Added
+- Tauri + React application foundation
+- Agent runtime scaffold with Rust backend
+- LLM providers integration and memory manager
+- Frontend UI components library
+- Tauri service layer with custom hooks
+- Rust commands for file operations
+
+### Fixed
+- TypeScript types for API responses
+
+### Documentation
+- Added CLAUDE.md project guide
+
 # Changelog
 
 All notable changes to this project will be documented in this file.
