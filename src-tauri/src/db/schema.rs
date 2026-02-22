@@ -342,6 +342,19 @@ fn migrate_v4(conn: &Connection) -> Result<()> {
 fn migrate_v5(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         r#"
+        -- Create database_connections table if not exists
+        CREATE TABLE IF NOT EXISTS database_connections (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            host TEXT,
+            port INTEGER,
+            database_name TEXT,
+            username TEXT,
+            password TEXT,
+            encrypted_password TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
         -- Add encrypted_password column to database_connections (may fail if already exists)
         ALTER TABLE database_connections ADD COLUMN encrypted_password TEXT;
 
