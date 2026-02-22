@@ -441,3 +441,231 @@ v0.5는 v0.4에서 구현된 기능들의 실제 동작을 구현하는 릴리�
   - `collaboration/mod.rs`: Template, SharedWorkflow, ExportOptions 타입 정의
   - `collaboration/templates.rs`: TemplateManager, 기본 템플릿
   - `collaboration/export_mod.rs`: JSON/Markdown/HTML 내보내기 기능
+
+---
+
+# v0.6 Release Notes (2026-02-22)
+
+## Overview
+v0.6는 AI 에이전트 시스템 고도화, 워크플로우 자동화, 및 클라우드 동기화의 기초 구조를 완성한 메이저 업데이트입니다.
+
+## New Features
+
+### 🤖 AI Agent System Enhancement (v0.6)
+- **Multimodal Input Processing**: 텍스트, 이미지, 혼합 입력 처리
+  - 지원 이미지 형식: PNG, JPEG, GIF, WebP, BMP
+  - 이미지 분석: 캡셔닝, 객체 감지, OCR, 태깁
+  - Vision Provider 추상화로 다양한 비전 모델 지원 가능
+
+- **Context Management**: 대화 컨텍스트 관리 및 압축
+  - 단기/장기 메모리 분리
+  - 우선순위 기반 메시지 관리 (Low, Normal, High, Critical)
+  - 컨텍스트 압축 전략 (RemoveOldest, Summarize, PriorityOnly, Hybrid)
+  - 토큰 한도 자동 모니터링 및 압축
+
+- **Sub-Agent Orchestration**: 전문화된 서브에이전트 오케스트레이션
+  - 에이전트 타입: General, CodeGenerator, CodeReviewer, Researcher, DataAnalyst, FileOperator, WebScraper
+  - 우선순위 기반 작업 큐
+  - 병렬 작업 실행 및 결과 집계
+  - 의존성 관리
+
+### ⚙️ Workflow Automation (v0.6)
+- **Workflow Store**: 워크플로우 저장소
+  - In-memory 저장소 구현 (DB 연동은 향후)
+  - 워크플로우 CRUD 작업
+  - 실행 기록 관리
+
+- **Workflow Engine**: 워크플로우 실행 엔진
+  - 노드 기반 실행
+  - 기본 노드 타입: Trigger, Action, Condition, Loop, Agent
+  - 에러 핸들링 및 결과 집계
+
+- **Trigger System**: 다양한 트리거 타입 지원
+  - Schedule: Cron 기반 스케줄링
+  - Webhook: HTTP 웹훅
+  - FileSystem: 파일 시스템 이벤트
+  - Voice: 음성 명령어
+  - Manual: 수동 실행
+
+### ☁️ Cloud Synchronization (v0.6)
+- **Sync Manager**: 클라우드 동기화 관리자
+  - 업로드/다운로드/삭제 작업 큐
+  - 자동 동기화 지원
+  - 동기화 결과 집계
+
+- **Conflict Resolution**: 동기화 충돌 해결
+  - 전략: ClientWins, ServerWins, Merge, Manual
+  - 충돌 감지 및 해결 API
+  - 머지 전략 지원
+
+- **Offline Queue**: 오프라인 큐 관리
+  - 네트워크 연결 실패 시 작업 대기
+  - 재시도 메커니즘
+  - 실패 작업 관리
+
+## Module Structure (src-tauri/src/)
+
+### Agent Module (`agent/`)
+- `mod.rs`: Agent 모듈 진입점
+- `multimodal.rs`: 멀티모달 입력 처리 (텍스트, 이미지)
+- `context.rs`: 컨텍스트 관리 및 압축
+- `orchestrator.rs`: 서브에이전트 오케스트레이션
+- `commands.rs`: Tauri 명령어
+
+### Workflow Module (`workflow/`)
+- `mod.rs`: Workflow 모듈 진입점
+- `store.rs`: 워크플로우 저장소 (InMemoryWorkflowStore, WorkflowStore trait)
+- `engine.rs`: 워크플로우 실행 엔진
+- `nodes.rs`: 노드 타입 및 실행기 정의
+- `triggers.rs`: 트리거 관리자
+- `commands.rs`: Tauri 명령어
+
+### Sync Module (`sync/`)
+- `mod.rs`: Sync 모듈 진입점
+- `manager.rs`: 동기화 관리자 (SyncManager, CloudProvider trait)
+- `conflict.rs`: 충돌 해결 (ConflictResolver, ConflictStrategy)
+- `offline.rs`: 오프라인 큐 (OfflineQueue, PendingOperation)
+- `commands.rs`: Tauri 명령어
+
+## New Tauri Commands (v0.6)
+
+### Agent Commands
+- `agent_multimodal_process`: 멀티모달 입력 처리
+- `agent_analyze_image`: 이미지 분석
+- `agent_context_add_message`: 컨텍스트에 메시지 추가
+- `agent_context_get_messages`: 컨텍스트 메시지 조회
+- `agent_context_clear`: 컨텍스트 초기화
+- `agent_context_token_count`: 토큰 수 조회
+- `agent_context_is_near_limit`: 한도 근접 확인
+- `agent_context_compress`: 컨텍스트 압축
+- `agent_context_set_strategy`: 압축 전략 설정
+- `agent_orchestrator_add_task`: 오케스트레이터 작업 추가
+- `agent_orchestrator_execute_all`: 모든 작업 실행
+- `agent_orchestrator_queue_length`: 큐 길이 조회
+- `agent_orchestrator_clear_completed`: 완료된 결과 초기화
+
+### Workflow Commands
+- `workflow_create`: 워크플로우 생성
+- `workflow_get`: 워크플로우 조회
+- `workflow_list`: 모든 워크플로우 목록
+- `workflow_list_active`: 활성화된 워크플로우 목록
+- `workflow_update`: 워크플로우 수정
+- `workflow_delete`: 워크플로우 삭제
+- `workflow_add_node`: 워크플로우에 노드 추가
+- `workflow_add_connection`: 노드 연결 추가
+- `workflow_execute`: 워크플로우 실행
+- `workflow_create_execution`: 실행 레코드 생성
+- `workflow_get_execution`: 실행 레코드 조회
+- `workflow_get_executions`: 워크플로우 실행 목록
+- `workflow_update_execution`: 실행 상태 업데이트
+- `workflow_register_trigger`: 트리거 등록
+- `workflow_unregister_trigger`: 트리거 해제
+- `workflow_list_triggers`: 활성 트리거 목록
+- `workflow_trigger_count`: 트리거 수 조회
+
+### Sync Commands
+- `sync_now`: 지금 동기화 실행
+- `sync_queue_upload`: 업로드 작업 큐에 추가
+- `sync_queue_download`: 다운로드 작업 큐에 추가
+- `sync_queue_delete`: 삭제 작업 큐에 추가
+- `sync_pending_count`: 대기 작업 수 조회
+- `sync_needs_sync`: 동기화 필요 여부 확인
+- `sync_clear_pending`: 대기 작업 초기화
+- `sync_set_conflict_strategy`: 충돌 해결 전략 설정
+- `sync_detect_conflict`: 충돌 감지
+- `sync_resolve_conflict`: 충돌 해결
+- `sync_offline_push`: 오프라인 큐에 작업 추가
+- `sync_offline_pop_ready`: 준비된 작업 꺼내기
+- `sync_offline_peek`: 다음 작업 확인
+- `sync_offline_mark_failed`: 작업 실패 표시
+- `sync_offline_length`: 큐 길이 조회
+- `sync_offline_clear`: 오프라인 큐 초기화
+- `sync_offline_get_failed`: 실패 작업 조회
+- `sync_offline_get_by_entity`: 엔티티별 작업 조회
+
+## Frontend Types (src/types/)
+
+- `agent.ts`: Agent 관련 TypeScript 타입
+  - ImageFormat, InputType, ImageAnalysis
+  - Message, MessageRole, MessagePriority
+  - CompressionStrategy, CompressionResult
+  - AgentType, TaskPriority, SubAgentTask, AggregatedResult
+
+- `workflow.ts`: Workflow 관련 TypeScript 타입
+  - Workflow, WorkflowDefinition, WorkflowNode
+  - ExecutionStatus, WorkflowExecution, ExecutionResult
+  - Trigger, TriggerType, TriggerHandle
+  - NodePosition, NodeConnection, HttpMethod, FsEvent
+
+- `sync.ts`: Sync 관련 TypeScript 타입
+  - SyncEntity, SyncOperation, SyncResult
+  - ConflictStrategy, SyncConflict, ConflictResolution
+  - PendingOperation
+
+## Frontend Stores (src/stores/)
+
+- `agentStore.ts`: Agent 기능 Zustand 스토어
+  - 컨텍스트 관리 (addMessage, getMessages, clearContext, compressContext)
+  - 멀티모달 처리 (processMultimodal, analyzeImage)
+  - 오케스트레이터 (addTask, executeAll, getQueueLength)
+
+- `workflowStore.ts`: Workflow 기능 Zustand 스토어
+  - 워크플로우 CRUD (loadWorkflows, createWorkflow, updateWorkflow, deleteWorkflow)
+  - 노드 관리 (addNode, addConnection)
+  - 실행 관리 (executeWorkflow, createExecution, getExecutions)
+  - 트리거 관리 (registerTrigger, unregisterTrigger, listTriggers)
+
+- `syncStore.ts`: Sync 기능 Zustand 스토어
+  - 동기화 관리 (syncNow, queueUpload, queueDownload, queueDelete)
+  - 충돌 해결 (detectConflict, resolveConflict)
+  - 오프라인 큐 (pushToQueue, popReadyFromQueue, markFailed)
+
+## Test Coverage
+
+### Integration Tests
+- `tests/agent_integration_test.rs`: 10개 에이전트 통합 테스트
+- `tests/workflow_integration_test.rs`: 10개 워크플로우 통합 테스트
+- `tests/sync_integration_test.rs`: 10개 동기화 통합 테스트
+
+### Unit Tests
+- 126개 단위 테스트 통과 (v0.5에서 121개에서 증가)
+- 각 모듈별 포괄적인 테스트 커버리지
+
+## Known Limitations
+
+1. **Workflow Store**: 현재는 InMemoryStore만 구현. DB 영속성은 향후 작업
+2. **Vision Provider**: MultimodalProcessor는 placeholder 구현. 실제 vision API 연동 필요
+3. **Cloud Provider**: SyncManager는 mock 구현만 포함. 실제 클라우드 API 연동 필요
+4. **Frontend UI**: v0.6 기능의 UI 컴포넌트는 향후 작업
+
+## Migration Guide
+
+v0.5 → v0.6 업그레이드 시:
+1. `cargo build`로 Rust 백엔드 빌드
+2. `npm install`로 새로운 의존성 설치
+3. 데이터베이스 마이그레이션 없음 (v0.6은 새로운 구조 추가)
+4. 새로운 Tauri 명령어 사용 가능
+
+## Future Work (v0.7)
+
+### Workflow Enhancements
+- DB 영속성 (SQLite)
+- 시각적 워크플로우 에디터 UI
+- 더 많은 노드 타입
+- 워크플로우 템플릿
+
+### Cloud Integration
+- 실제 클라우드 제공자 연동 (AWS S3, Google Drive, Dropbox)
+- 실시간 동기화
+- 백그라운드 동기화 스케줄링
+
+### AI Enhancements
+- 실제 Vision API 연동 (GPT-4 Vision, Claude 3.5 Sonnet)
+- 실제 LLM 기반 컨텍스트 압축
+- 더 많은 서브에이전트 타입
+
+### UI Components
+- 워크플로우 빌더 UI
+- 동기화 상태 대시보드
+- 에이전트 오케스트레이션 시각화
+- 멀티모달 채팅 UI

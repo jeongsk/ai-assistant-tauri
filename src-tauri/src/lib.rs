@@ -332,6 +332,18 @@ pub fn run() {
             let job_scheduler = Arc::new(tokio::sync::Mutex::new(JobScheduler::new(scheduler_config)));
             app.manage(job_scheduler);
 
+            // Initialize v0.6 agent state
+            let agent_state = Arc::new(agent::commands::AgentState::new());
+            app.manage(agent_state);
+
+            // Initialize v0.6 workflow state
+            let workflow_state = Arc::new(workflow::commands::WorkflowState::new());
+            app.manage(workflow_state);
+
+            // Initialize v0.6 sync state
+            let sync_state = Arc::new(sync::commands::SyncState::new());
+            app.manage(sync_state);
+
             // Load jobs from database and start scheduler
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -512,7 +524,58 @@ pub fn run() {
             plugins::plugin_get_messages,
             plugins::plugin_stop,
             plugins::plugin_restart,
-            plugins::plugin_list_running
+            plugins::plugin_list_running,
+            // Agent commands (v0.6)
+            agent::commands::agent_multimodal_process,
+            agent::commands::agent_analyze_image,
+            agent::commands::agent_context_add_message,
+            agent::commands::agent_context_get_messages,
+            agent::commands::agent_context_clear,
+            agent::commands::agent_context_token_count,
+            agent::commands::agent_context_is_near_limit,
+            agent::commands::agent_context_compress,
+            agent::commands::agent_context_set_strategy,
+            agent::commands::agent_orchestrator_add_task,
+            agent::commands::agent_orchestrator_execute_all,
+            agent::commands::agent_orchestrator_queue_length,
+            agent::commands::agent_orchestrator_clear_completed,
+            // Workflow commands (v0.6)
+            workflow::commands::workflow_create,
+            workflow::commands::workflow_get,
+            workflow::commands::workflow_list,
+            workflow::commands::workflow_list_active,
+            workflow::commands::workflow_update,
+            workflow::commands::workflow_delete,
+            workflow::commands::workflow_add_node,
+            workflow::commands::workflow_add_connection,
+            workflow::commands::workflow_execute,
+            workflow::commands::workflow_create_execution,
+            workflow::commands::workflow_get_execution,
+            workflow::commands::workflow_get_executions,
+            workflow::commands::workflow_update_execution,
+            workflow::commands::workflow_register_trigger,
+            workflow::commands::workflow_unregister_trigger,
+            workflow::commands::workflow_list_triggers,
+            workflow::commands::workflow_trigger_count,
+            // Sync commands (v0.6)
+            sync::commands::sync_now,
+            sync::commands::sync_queue_upload,
+            sync::commands::sync_queue_download,
+            sync::commands::sync_queue_delete,
+            sync::commands::sync_pending_count,
+            sync::commands::sync_needs_sync,
+            sync::commands::sync_clear_pending,
+            sync::commands::sync_set_conflict_strategy,
+            sync::commands::sync_detect_conflict,
+            sync::commands::sync_resolve_conflict,
+            sync::commands::sync_offline_push,
+            sync::commands::sync_offline_pop_ready,
+            sync::commands::sync_offline_peek,
+            sync::commands::sync_offline_mark_failed,
+            sync::commands::sync_offline_length,
+            sync::commands::sync_offline_clear,
+            sync::commands::sync_offline_get_failed,
+            sync::commands::sync_offline_get_by_entity
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
