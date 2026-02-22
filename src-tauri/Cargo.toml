@@ -45,7 +45,9 @@ aws-config = { version = "1", optional = true }
 aws-sdk-s3 = { version = "1", optional = true }
 
 # v0.5 Voice dependencies
-whisper-rs = { version = "0.11", optional = true }
+whisper-rs = { version = "0.15", optional = true }
+reqwest = { version = "0.12", optional = true, features = ["stream"] }
+futures-util = "0.3"
 
 # v0.5 Plugin WASM Runtime dependencies
 wasmtime = { version = "22", optional = true, features = ["runtime", "cranelift"] }
@@ -56,7 +58,7 @@ default = ["voice"]
 database = ["tokio-postgres", "mysql_async"]
 git = ["git2", "walkdir"]
 cloud = ["aws-config", "aws-sdk-s3"]
-voice = ["whisper-rs"]
+voice = ["whisper-rs", "reqwest"]
 wasm = ["wasmtime", "wasmtime-wasi"]
 all-v05 = ["database", "git", "cloud", "voice", "wasm"]
 
