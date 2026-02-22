@@ -4,8 +4,8 @@
 
 pub mod operations;
 
-
 use serde::{Deserialize, Serialize};
+use crate::integration::git::operations::GitOperations;
 
 /// Git repository configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,10 +92,10 @@ pub fn get_git_status(path: String) -> Result<GitStatus, String> {
 
 /// Get current git commit (legacy command)
 #[tauri::command]
-pub fn get_git_current_commit(_path: String) -> Result<String, String> {
+pub fn get_git_current_commit(path: String) -> Result<String, String> {
     #[cfg(feature = "git")]
     {
-        let ops = GitOperations::open(&path)?;
+        let _ops = GitOperations::open(&path)?;
         let repo = git2::Repository::open(&std::path::PathBuf::from(&path))
             .map_err(|e| format!("Failed to open repo: {}", e))?;
         let head = repo.head()

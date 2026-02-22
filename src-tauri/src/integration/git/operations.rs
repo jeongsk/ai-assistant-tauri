@@ -5,6 +5,127 @@
 #![allow(dead_code)]
 
 use serde::{Deserialize, Serialize};
+use std::path::Path;
+
+/// Get list of conflicted files
+#[cfg(feature = "git")]
+fn get_conflicts(repo: &git2::Repository) -> Result<Vec<String>, String> {
+    let mut conflicts = Vec::new();
+
+    // Use repo.statuses to detect conflicts instead
+    let mut status_opts = git2::StatusOptions::new();
+    status_opts.include_untracked(true);
+
+    let statuses = repo.statuses(Some(&mut status_opts))
+        .map_err(|e| format!("Failed to get status: {}", e))?;
+
+    for entry in statuses.iter() {
+        if entry.status().contains(git2::Status::CONFLICTED) {
+            if let Some(path) = entry.path() {
+                conflicts.push(path.to_string());
+            }
+        }
+    }
+
+    Ok(conflicts)
+}
+
+/// Perform a merge with conflict detection
+#[cfg(feature = "git")]
+fn perform_merge(
+    repo: &git2::Repository,
+    fetch_commit: &git2::Commit,
+) -> Result<GitOperationResult, String> {
+    use std::time::Instant;
+
+    let start = Instant::now();
+
+    let fetch_annotated = repo.find_annotated_commit(fetch_commit.id())
+        .map_err(|e| format!("Failed to annotate fetched commit: {}", e))?;
+
+    let head_commit = repo.head()
+        .and_then(|h| h.peel_to_commit())
+        .map_err(|e| format!("Failed to get HEAD commit: {}", e))?;
+
+    let signature = repo.signature()
+        .map_err(|e| format!("Failed to get signature: {}", e))?;
+
+    let msg = format!("Merge commit {}", fetch_commit.id());
+
+    let mut merge_options = git2::MergeOptions::new();
+    merge_options.fail_on_conflict(true);
+
+    let mut checkout_builder = git2::build::CheckoutBuilder::new();
+
+    match repo.merge(
+        &[&fetch_annotated],
+        Some(&mut merge_options),
+        Some(&mut checkout_builder),
+    ) {
+        Ok(_) => {
+            let mut index = repo.index()
+                .map_err(|e| format!("Failed to get index: {}", e))?;
+
+            if index.has_conflicts() {
+                // Clean up merge state
+                repo.cleanup_state()
+                    .map_err(|e| format!("Failed to cleanup merge: {}", e))?;
+
+                let conflicts = get_conflicts(&repo)?;
+
+                return Ok(GitOperationResult {
+                    success: false,
+                    result: Some(format!("Merge conflicts detected")),
+                    error: Some(format!("{} files have conflicts:\n{}", conflicts.len(), conflicts.join("\n"))),
+                    execution_time_ms: start.elapsed().as_millis() as u64,
+                });
+            }
+
+            let tree_id = index.write_tree()
+                .map_err(|e| format!("Failed to write tree: {}", e))?;
+
+            let tree = repo.find_tree(tree_id)
+                .map_err(|e| format!("Failed to find tree: {}", e))?;
+
+            let oid = repo.commit(
+                Some("HEAD"),
+                &signature,
+                &signature,
+                &msg,
+                &tree,
+                &[&head_commit, fetch_commit],
+            )
+                .map_err(|e| format!("Failed to create merge commit: {}", e))?;
+
+            // Clean up merge state
+            repo.cleanup_state()
+                .map_err(|e| format!("Failed to cleanup merge: {}", e))?;
+
+            Ok(GitOperationResult {
+                success: true,
+                result: Some(format!("Merged commit {} successfully", oid)),
+                error: None,
+                execution_time_ms: start.elapsed().as_millis() as u64,
+            })
+        }
+        Err(e) => {
+            if e.class() == git2::ErrorClass::Merge {
+                // Clean up merge state
+                repo.cleanup_state()
+                    .map_err(|e2| format!("Failed to cleanup merge: {}", e2))?;
+
+                Ok(GitOperationResult {
+                    success: false,
+                    result: Some(format!("Merge conflicts detected")),
+                    error: Some(format!("Automatic merge failed: {}", e)),
+                    execution_time_ms: start.elapsed().as_millis() as u64,
+                })
+            } else {
+                Err(format!("Merge failed: {}", e))
+            }
+        }
+    }
+}
 
 /// Git operations result
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -77,7 +198,7 @@ impl GitOperations {
             .map_err(|e| format!("Failed to open repo: {}", e))?;
 
         let head = repo.head().ok();
-        let branch = head.and_then(|h| h.shorthand()).map(|s| s.to_string());
+        let branch = head.as_ref().and_then(|h| h.shorthand()).map(|s| s.to_string());
 
         // Count changes
         let mut status_opts = git2::StatusOptions::new();
@@ -178,11 +299,11 @@ impl GitOperations {
         let refspec = format!("refs/heads/{}:refs/heads/{}", branch, branch);
 
         // Configure authentication callbacks
-        let config = repo.config().ok();
+        let _config = repo.config().ok();
         let mut callbacks = git2::RemoteCallbacks::new();
 
         // Try to use credentials from config or ssh agent
-        callbacks.credentials(|url, username_from_url, _allowed| {
+        callbacks.credentials(|_url, username_from_url, _allowed| {
             git2::Cred::ssh_key_from_agent(
                 username_from_url.unwrap_or("git"),
             )
@@ -222,7 +343,7 @@ impl GitOperations {
         }
     }
 
-    /// Pull changes (simplified version - fetch only)
+    /// Pull changes with merge support
     #[cfg(feature = "git")]
     pub fn pull(&self, remote: &str, branch: &str) -> Result<GitOperationResult, String> {
         use std::time::Instant;
@@ -267,7 +388,7 @@ impl GitOperations {
                     .and_then(|h| h.peel_to_commit().ok());
 
                 match (head_commit, fetch_commit) {
-                    (Some(head), Ok(fetch)) => {
+                    (_head, Ok(fetch)) => {
                         // Try fast-forward merge
                         let annotated_fetch = repo.find_annotated_commit(fetch.id())
                             .map_err(|e| format!("Failed to annotate commit: {}", e))?;
@@ -303,12 +424,16 @@ impl GitOperations {
                                         execution_time_ms: start.elapsed().as_millis() as u64,
                                     })
                                 } else {
-                                    Ok(GitOperationResult {
-                                        success: false,
-                                        result: Some(format!("Fetched from {}/{} (merge required, not implemented)", remote, branch)),
-                                        error: None,
-                                        execution_time_ms: start.elapsed().as_millis() as u64,
-                                    })
+                                    // Normal merge required
+                                    match perform_merge(&repo, &fetch) {
+                                        Ok(merge_result) => Ok(merge_result),
+                                        Err(e) => Ok(GitOperationResult {
+                                            success: false,
+                                            result: Some(format!("Fetched from {}/{}", remote, branch)),
+                                            error: Some(format!("Merge failed: {}", e)),
+                                            execution_time_ms: start.elapsed().as_millis() as u64,
+                                        }),
+                                    }
                                 }
                             }
                             Err(e) => Ok(GitOperationResult {
@@ -340,8 +465,8 @@ impl GitOperations {
 /// Clone a repository
 #[tauri::command]
 pub fn git_clone(
-    _url: String,
-    _path: String,
+    url: String,
+    path: String,
 ) -> std::result::Result<GitOperationResult, String> {
     #[cfg(feature = "git")]
     {
@@ -362,8 +487,8 @@ pub fn git_clone(
 /// Commit changes
 #[tauri::command]
 pub fn git_commit(
-    _path: String,
-    _message: String,
+    path: String,
+    message: String,
 ) -> std::result::Result<GitOperationResult, String> {
     #[cfg(feature = "git")]
     {
@@ -385,9 +510,9 @@ pub fn git_commit(
 /// Push changes
 #[tauri::command]
 pub fn git_push(
-    _path: String,
-    _remote: String,
-    _branch: String,
+    path: String,
+    remote: String,
+    branch: String,
 ) -> std::result::Result<GitOperationResult, String> {
     #[cfg(feature = "git")]
     {
@@ -409,9 +534,9 @@ pub fn git_push(
 /// Pull changes
 #[tauri::command]
 pub fn git_pull(
-    _path: String,
-    _remote: String,
-    _branch: String,
+    path: String,
+    remote: String,
+    branch: String,
 ) -> std::result::Result<GitOperationResult, String> {
     #[cfg(feature = "git")]
     {
@@ -433,7 +558,7 @@ pub fn git_pull(
 /// Get extended status
 #[tauri::command]
 pub fn git_get_extended_status(
-    _path: String,
+    path: String,
 ) -> std::result::Result<GitExtendedStatus, String> {
     #[cfg(feature = "git")]
     {

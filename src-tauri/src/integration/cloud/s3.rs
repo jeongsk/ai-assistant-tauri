@@ -68,7 +68,7 @@ impl S3ClientWrapper {
 
         // Initialize AWS config
         let region_str = self.region.as_deref().unwrap_or("us-east-1");
-        let region = s3::config::Region::new(region_str);
+        let region = s3::config::Region::new(region_str.to_string());
 
         let config_loader = aws_config::defaults(aws_config::BehaviorVersion::latest())
             .region(region)
@@ -189,18 +189,15 @@ impl S3Manager {
 
         let bucket = wrapper.bucket();
 
-        // Create put request using aws_sdk_s3 1.x API
-        let put_request = aws_sdk_s3::types::PutObjectRequest::builder()
+        // Execute upload
+        match client.put_object()
             .bucket(bucket)
             .key(key)
             .body(aws_sdk_s3::primitives::ByteStream::from(data))
-            .build()
-            .map_err(|e| format!("Failed to build request: {}", e))?;
-
-        // Execute upload
-        match client.put_object(put_request).await {
+            .send()
+            .await {
             Ok(output) => {
-                let version_id = output.version_id().map(|v| v.as_str().to_string());
+                let version_id = output.version_id().map(|v| v.to_string());
                 let result_str = if let Some(v) = version_id {
                     format!("Uploaded {} to {} (version: {})", key, bucket, v)
                 } else {
@@ -259,15 +256,12 @@ impl S3Manager {
 
         let bucket = wrapper.bucket();
 
-        // Create get request using aws_sdk_s3 1.x API
-        let get_request = aws_sdk_s3::types::GetObjectRequest::builder()
+        // Execute download
+        match client.get_object()
             .bucket(bucket)
             .key(key)
-            .build()
-            .map_err(|e| format!("Failed to build request: {}", e))?;
-
-        // Execute download
-        match client.get_object(get_request).await {
+            .send()
+            .await {
             Ok(output) => {
                 // Try to collect the body
                 match output.body.collect().await {
@@ -307,32 +301,31 @@ impl S3Manager {
         let client = wrapper.get_or_init_client().await?;
         let bucket = wrapper.bucket();
 
-        let mut list_request_builder = aws_sdk_s3::types::ListObjectsV2Request::builder()
+        let mut list_request = client.list_objects_v2()
             .bucket(bucket)
             .max_keys(1000);
 
         if let Some(p) = prefix {
-            list_request_builder = list_request_builder.prefix(p);
+            list_request = list_request.prefix(p);
         }
 
-        let list_request = list_request_builder.build()
-            .map_err(|e| format!("Failed to build list request: {}", e))?;
-
-        let response = client.list_objects_v2(list_request).await
+        let response = list_request.send()
+            .await
             .map_err(|e| format!("List objects failed: {}", e))?;
 
-        let objects = response.contents().unwrap_or_default();
+        let objects = response.contents.unwrap_or_default();
 
         let mut result = Vec::new();
         for obj in objects {
             result.push(S3Object {
-                key: obj.key().unwrap_or("").to_string(),
-                size: obj.size().unwrap_or(0),
-                last_modified: obj.last_modified()
-                    .map(|d| d.as_secs().to_string())
+                key: obj.key.as_deref().unwrap_or("").to_string(),
+                size: obj.size.unwrap_or(0),
+                last_modified: obj.last_modified
+                    .as_ref()
+                    .map(|d| d.as_secs_f64().to_string())
                     .unwrap_or_default(),
-                etag: obj.e_tag().unwrap_or("").to_string(),
-                storage_class: obj.storage_class().map(|sc| sc.as_str().to_string()),
+                etag: obj.e_tag.as_deref().unwrap_or("").to_string(),
+                storage_class: obj.storage_class.as_ref().map(|sc| sc.as_str().to_string()),
             });
         }
 
@@ -375,15 +368,12 @@ impl S3Manager {
 
         let bucket = wrapper.bucket();
 
-        // Create delete request using aws_sdk_s3 1.x API
-        let delete_request = aws_sdk_s3::types::DeleteObjectRequest::builder()
+        // Execute delete
+        match client.delete_object()
             .bucket(bucket)
             .key(key)
-            .build()
-            .map_err(|e| format!("Failed to build request: {}", e))?;
-
-        // Execute delete
-        match client.delete_object(delete_request).await {
+            .send()
+            .await {
             Ok(_) => S3OperationResult {
                 success: true,
                 result: Some(format!("Deleted {} from {}", key, bucket)),

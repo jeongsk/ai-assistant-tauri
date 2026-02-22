@@ -452,6 +452,12 @@ pub fn run() {
             collaboration::template_commands::share_template_to_team,
             collaboration::template_commands::get_team_templates,
             collaboration::template_commands::revoke_template_access,
+            // Workflow commands (v0.5)
+            collaboration::list_workflows,
+            collaboration::get_workflow,
+            collaboration::create_workflow,
+            collaboration::update_workflow,
+            collaboration::delete_workflow,
             // Voice settings commands (v0.4)
             db::get_voice_settings,
             db::update_voice_settings,

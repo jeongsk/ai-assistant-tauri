@@ -6,7 +6,7 @@ use crate::plugins::{
     api::{handle_request, PluginRequest},
     sandbox::{PluginSandbox, SandboxManager},
     runtime::{WasmRuntime, WasmRuntimeConfig},
-    wasi_host::WasiHost,
+    wasi_host::{WasiHost, create_wasi_context_with_dir},
     monitor::{ResourceMonitor, MetricUpdate},
     PluginContext, PluginManifest, PluginPermission, ResourceLimits,
 };
@@ -202,7 +202,7 @@ impl PluginExecutor {
         }
 
         // Remove from running plugins
-        let _plugin = plugins.remove(id)
+        let plugin = plugins.remove(id)
             .ok_or_else(|| format!("Plugin {} not found", id))?;
 
         // Stop monitoring
