@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import React, { useState, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 
 interface MarketplaceItem {
   id: string;
   name: string;
   description: string;
-  item_type: 'skill' | 'recipe' | 'plugin' | 'template';
+  item_type: "skill" | "recipe" | "plugin" | "template";
   author: string;
   version: string;
   download_count: number;
@@ -28,7 +28,7 @@ export const MarketplacePanel: React.FC = () => {
   const [items, setItems] = useState<MarketplaceItem[]>([]);
   const [categories, setCategories] = useState<MarketplaceCategory[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -39,7 +39,7 @@ export const MarketplacePanel: React.FC = () => {
   const loadItems = async () => {
     setLoading(true);
     try {
-      const result = await invoke<MarketplaceItem[]>('marketplace_list_items', {
+      const result = await invoke<MarketplaceItem[]>("marketplace_list_items", {
         filters: {
           item_type: null,
           category: selectedCategory,
@@ -53,7 +53,7 @@ export const MarketplacePanel: React.FC = () => {
       });
       setItems(result);
     } catch (error) {
-      console.error('Failed to load marketplace items:', error);
+      console.error("Failed to load marketplace items:", error);
     } finally {
       setLoading(false);
     }
@@ -61,40 +61,47 @@ export const MarketplacePanel: React.FC = () => {
 
   const loadCategories = async () => {
     try {
-      const result = await invoke<MarketplaceCategory[]>('marketplace_get_categories');
+      const result = await invoke<MarketplaceCategory[]>(
+        "marketplace_get_categories",
+      );
       setCategories(result);
     } catch (error) {
-      console.error('Failed to load categories:', error);
+      console.error("Failed to load categories:", error);
     }
   };
 
   const installItem = async (itemId: string) => {
     try {
-      await invoke('marketplace_install_item', { itemId });
-      alert('Item installed successfully!');
+      await invoke("marketplace_install_item", { itemId });
+      alert("Item installed successfully!");
     } catch (error) {
-      console.error('Failed to install item:', error);
+      console.error("Failed to install item:", error);
       alert(`Failed to install: ${error}`);
     }
   };
 
   const getItemTypeIcon = (type: string) => {
     switch (type) {
-      case 'skill': return '⚡';
-      case 'recipe': return '📋';
-      case 'plugin': return '🔌';
-      case 'template': return '📄';
-      default: return '📦';
+      case "skill":
+        return "⚡";
+      case "recipe":
+        return "📋";
+      case "plugin":
+        return "🔌";
+      case "template":
+        return "📄";
+      default:
+        return "📦";
     }
   };
 
-  const getPriceText = (price: MarketplaceItem['price']) => {
-    if ('Free' in price) return 'Free';
+  const getPriceText = (price: MarketplaceItem["price"]) => {
+    if ("Free" in price) return "Free";
     return `$${price.Paid.amount / 100}`;
   };
 
   return (
-    <div className="h-full flex flex-col bg-white dark:bg-gray-800">
+    <div className="flex-1 flex flex-col bg-white dark:bg-gray-800 overflow-hidden">
       {/* Header */}
       <div className="p-4 border-b dark:border-gray-700">
         <h2 className="text-xl font-bold mb-4">Marketplace</h2>
@@ -116,8 +123,8 @@ export const MarketplacePanel: React.FC = () => {
             onClick={() => setSelectedCategory(null)}
             className={`px-3 py-1 rounded-full text-sm ${
               selectedCategory === null
-                ? 'bg-blue-500 text-white'
-                : 'bg-gray-200 dark:bg-gray-700'
+                ? "bg-blue-500 text-white"
+                : "bg-gray-200 dark:bg-gray-700"
             }`}
           >
             All
@@ -128,8 +135,8 @@ export const MarketplacePanel: React.FC = () => {
               onClick={() => setSelectedCategory(category.id)}
               className={`px-3 py-1 rounded-full text-sm ${
                 selectedCategory === category.id
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-200 dark:bg-gray-700'
+                  ? "bg-blue-500 text-white"
+                  : "bg-gray-200 dark:bg-gray-700"
               }`}
             >
               {category.icon} {category.name}
@@ -153,7 +160,9 @@ export const MarketplacePanel: React.FC = () => {
               >
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex items-center gap-2">
-                    <span className="text-2xl">{getItemTypeIcon(item.item_type)}</span>
+                    <span className="text-2xl">
+                      {getItemTypeIcon(item.item_type)}
+                    </span>
                     <div>
                       <h3 className="font-semibold">{item.name}</h3>
                       <p className="text-sm text-gray-500">by {item.author}</p>
