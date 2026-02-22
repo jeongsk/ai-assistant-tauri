@@ -355,9 +355,6 @@ fn migrate_v5(conn: &Connection) -> Result<()> {
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
 
-        -- Add encrypted_password column to database_connections (may fail if already exists)
-        ALTER TABLE database_connections ADD COLUMN encrypted_password TEXT;
-
         -- Create cloud_storages table
         CREATE TABLE IF NOT EXISTS cloud_storages (
             id TEXT PRIMARY KEY,

@@ -12,7 +12,6 @@ use super::store::{
 };
 use super::engine::{WorkflowExecutor, ExecutionResult};
 use super::triggers::{TriggerManager, Trigger};
-use super::nodes::{TriggerExecutor, ActionExecutor, ConditionExecutor, LoopExecutor, AgentExecutor};
 
 /// Global state for workflow features
 pub struct WorkflowState {
@@ -23,18 +22,8 @@ pub struct WorkflowState {
 
 impl WorkflowState {
     pub fn new() -> Self {
+        // WorkflowExecutor::new() already registers built-in executors
         let executor = Arc::new(RwLock::new(WorkflowExecutor::new()));
-
-        // Register built-in node executors
-        let executor_clone = executor.clone();
-        tokio::spawn(async move {
-            let mut exec = executor_clone.write().await;
-            exec.register_executor("trigger", Box::new(TriggerExecutor));
-            exec.register_executor("action", Box::new(ActionExecutor));
-            exec.register_executor("condition", Box::new(ConditionExecutor));
-            exec.register_executor("loop", Box::new(LoopExecutor));
-            exec.register_executor("agent", Box::new(AgentExecutor));
-        });
 
         Self {
             store: Arc::new(RwLock::new(InMemoryWorkflowStore::new())),

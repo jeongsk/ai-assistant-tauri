@@ -13,11 +13,18 @@ pub struct WorkflowExecutor {
 }
 
 impl WorkflowExecutor {
-    /// Create a new workflow executor
+    /// Create a new workflow executor with built-in executors registered
     pub fn new() -> Self {
-        Self {
+        let mut executor = Self {
             node_executors: HashMap::new(),
-        }
+        };
+        // Register built-in executors
+        executor.register_executor("trigger", Box::new(super::nodes::TriggerExecutor));
+        executor.register_executor("action", Box::new(super::nodes::ActionExecutor));
+        executor.register_executor("condition", Box::new(super::nodes::ConditionExecutor));
+        executor.register_executor("loop", Box::new(super::nodes::LoopExecutor));
+        executor.register_executor("agent", Box::new(super::nodes::AgentExecutor));
+        executor
     }
     
     /// Register a node executor
