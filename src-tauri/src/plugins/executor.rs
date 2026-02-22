@@ -156,7 +156,9 @@ impl PluginExecutor {
                     .map_err(|e| format!("Failed to load WASM module: {}", e))?;
 
                 // Create WASI context with working directory
-                let wasi_ctx = create_wasi_context_with_dir(&plugin_id, work_dir.to_str().unwrap())?;
+                let work_dir_str = work_dir.to_str()
+                    .ok_or_else(|| "Invalid UTF-8 in work directory path".to_string())?;
+                let wasi_ctx = create_wasi_context_with_dir(&plugin_id, work_dir_str)?;
 
                 // Instantiate
                 let instance_id = runtime.instantiate(&module_hash, Some(wasi_ctx))

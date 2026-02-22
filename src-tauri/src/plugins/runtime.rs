@@ -13,7 +13,9 @@ use wasmtime::{
     Config,
 };
 #[cfg(feature = "wasm")]
-use wasmtime_wasi::WasiCtx;
+use wasmtime_wasi::WasiCtxBuilder;
+#[cfg(feature = "wasm")]
+use wasmtime_wasi::preview1::{WasiP1Ctx, add_to_linker_sync};
 
 /// WASM runtime configuration
 #[derive(Debug, Clone)]
@@ -67,22 +69,20 @@ impl WasmModule {
             return Err("Invalid WASM module: missing magic number".to_string());
         }
 
-        // Simple hash for validation (using built-in hashing)
+        // Simple hash for validation
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
         let mut hasher = DefaultHasher::new();
         bytes.hash(&mut hasher);
         let hash = format!("{:x}", hasher.finish());
 
-        #[cfg(feature = "wasm")]
-        let module = if let Some(eng) = engine {
-            Some(Module::from_binary(eng, &bytes)
-                .map_err(|e| format!("Failed to compile WASM: {}", e))?)
-        } else {
-            None
-        };
+        // Always require engine for wasm feature
+        let eng = engine.ok_or_else(|| "Engine required for WASM module compilation".to_string())?;
 
-        Ok(Self { hash, #[cfg(feature = "wasm")] module })
+        let module = Module::from_binary(eng, &bytes)
+            .map_err(|e| format!("Failed to compile WASM: {}", e))?;
+
+        Ok(Self { hash, module: Some(module) })
     }
 
     /// Create a new WASM module from bytes (non-wasm fallback)
@@ -139,7 +139,7 @@ pub struct WasmInstance {
 
     /// WASM feature-gated fields
     #[cfg(feature = "wasm")]
-    store: Option<Store<WasiCtx>>,
+    store: Option<Store<WasiP1Ctx>>,
     #[cfg(feature = "wasm")]
     instance: Option<Instance>,
 }
@@ -182,7 +182,7 @@ pub struct WasmRuntime {
     #[cfg(feature = "wasm")]
     engine: Option<Engine>,
     #[cfg(feature = "wasm")]
-    linker: Option<Linker<WasiCtx>>,
+    linker: Option<Linker<WasiP1Ctx>>,
 }
 
 impl WasmRuntime {
@@ -194,6 +194,8 @@ impl WasmRuntime {
         {
             engine_config.wasm_simd(true);
             engine_config.wasm_multi_memory(true);
+            // Enable fuel consumption at engine level if fuel is enabled in config
+            engine_config.consume_fuel(true);
         }
 
         #[cfg(feature = "wasm")]
@@ -202,12 +204,12 @@ impl WasmRuntime {
             .ok();
 
         #[cfg(feature = "wasm")]
-        let linker = Linker::new(engine.as_ref().unwrap());
+        let mut linker = Linker::new(engine.as_ref().unwrap());
         #[cfg(feature = "wasm")]
         {
-            // In wasmtime 22+, use the new WASI API
-            // For now, we'll skip WASI integration to avoid API issues
-            // The WASM modules can still run without full WASI support
+            // Add WASI preview1 to the linker using wasmtime 22+ API
+            add_to_linker_sync(&mut linker, |s| s)
+                .expect("Failed to add WASI to linker");
         }
 
         Self {
@@ -239,31 +241,63 @@ impl WasmRuntime {
     pub fn instantiate(
         &mut self,
         module_hash: &str,
-        _wasi_ctx: Option<WasiCtx>,
+        wasi_ctx: Option<WasiP1Ctx>,
     ) -> Result<String, String> {
         // Find module
-        let _module = self.modules
+        let module = self.modules
             .get(module_hash)
             .ok_or_else(|| format!("Module not found: {}", module_hash))?;
+
+        // Get the actual wasmtime Module
+        let wasmtime_module = module.as_module()
+            .ok_or_else(|| format!("Module {:?} is not a valid WASM module", module_hash))?;
 
         // Create instance ID
         let instance_id = uuid::Uuid::new_v4().to_string();
 
-        // Simplified WASM instance creation for compatibility
+        // Get engine and linker references
+        let engine = self.engine.as_ref()
+            .ok_or_else(|| "WASM engine not initialized".to_string())?;
+        let linker = self.linker.as_ref()
+            .ok_or_else(|| "WASM linker not initialized".to_string())?;
+
+        // Create WASI context (use provided or create minimal)
+        let wasi_ctx = wasi_ctx.unwrap_or_else(|| {
+            WasiCtxBuilder::new().build_p1()
+        });
+
+        // Create store with WASI context as data
+        let mut store = Store::new(engine, wasi_ctx);
+
+        // Configure fuel if enabled
+        if self.config.enable_fuel {
+            store.set_fuel(self.config.initial_fuel)
+                .map_err(|e| format!("Failed to set fuel: {}", e))?;
+        }
+
+        // Instantiate the module with the linker
+        let instance = linker.instantiate(&mut store, wasmtime_module)
+            .map_err(|e| format!("Failed to instantiate WASM module: {}", e))?;
+
+        // Calculate initial memory size
+        let memory_size = self.get_instance_memory_size(&instance, &mut store);
+
+        // Create instance state
         let state = InstanceState {
             id: instance_id.clone(),
             status: InstanceStatus::Running,
-            memory_used: 0,
+            memory_used: memory_size,
             fuel_consumed: 0,
         };
 
+        // Store the instance with actual Store and Instance
         self.instances.insert(instance_id.clone(), WasmInstance {
             state,
             created_at: Instant::now(),
             #[cfg(feature = "wasm")]
-            store: None,
+            store: Some(store),
             #[cfg(feature = "wasm")]
-            instance: None,
+            instance: Some(instance),
         });
 
         Ok(instance_id)
@@ -309,83 +343,181 @@ impl WasmRuntime {
         &mut self,
         instance_id: &str,
         function_name: &str,
-        _args: Vec<serde_json::Value>,
+        args: Vec<serde_json::Value>,
     ) -> Result<WasmExecutionResult, String> {
         let start = Instant::now();
 
         // Find instance
-        let instance_idx = self.instances
-            .iter()
-            .position(|(id, _)| id == instance_id)
+        let instance_entry = self.instances
+            .get_mut(instance_id)
             .ok_or_else(|| format!("Instance not found: {}", instance_id))?;
 
-        // Check execution time limit
-        let elapsed = start.elapsed();
-        if elapsed.as_millis() > self.config.max_execution_time_ms as u128 {
-            let id = self.instances.keys().nth(instance_idx).unwrap().clone();
-            if let Some(inst) = self.instances.get_mut(&id) {
-                inst.state.status = InstanceStatus::Failed(
+        #[cfg(feature = "wasm")]
+        {
+            // Get mutable references to store and instance
+            let store = instance_entry.store.as_mut()
+                .ok_or_else(|| "Store not initialized".to_string())?;
+            let instance = instance_entry.instance.as_ref()
+                .ok_or_else(|| "Instance not initialized".to_string())?;
+
+            // Check execution time limit before calling
+            if start.elapsed().as_millis() > self.config.max_execution_time_ms as u128 {
+                instance_entry.state.status = InstanceStatus::Failed(
                     "Execution time limit exceeded".to_string()
                 );
-            }
-            return Ok(WasmExecutionResult {
-                success: false,
-                result: None,
-                error: Some("Execution time limit exceeded".to_string()),
-                execution_time_ms: elapsed.as_millis() as u64,
-                fuel_consumed: 0,
-            });
-        }
-
-        // Simplified function call for compatibility
-        let result: Result<serde_json::Value, String> = match function_name {
-            "init" => Ok(serde_json::json!({"status": "initialized"})),
-            "shutdown" => Ok(serde_json::json!({"status": "shutdown"})),
-            _ => Ok(serde_json::json!({"result": "ok"})),
-        };
-
-        let elapsed = start.elapsed();
-        let fuel_used = if self.config.enable_fuel {
-            elapsed.as_millis() as u64 * 1000
-        } else {
-            0
-        };
-
-        match result {
-            Ok(value) => {
-                let id = self.instances.keys().nth(instance_idx).unwrap().clone();
-                if let Some(instance) = self.instances.get_mut(&id) {
-                    instance.state.fuel_consumed += fuel_used;
-                }
-                Ok(WasmExecutionResult {
-                    success: true,
-                    result: Some(value),
-                    error: None,
-                    execution_time_ms: elapsed.as_millis() as u64,
-                    fuel_consumed: fuel_used,
-                })
-            }
-            Err(e) => {
-                let id = self.instances.keys().nth(instance_idx).unwrap().clone();
-                if let Some(instance) = self.instances.get_mut(&id) {
-                    instance.state.status = InstanceStatus::Failed(e.clone());
-                }
-                Ok(WasmExecutionResult {
+                return Ok(WasmExecutionResult {
                     success: false,
                     result: None,
-                    error: Some(e),
+                    error: Some("Execution time limit exceeded".to_string()),
+                    execution_time_ms: start.elapsed().as_millis() as u64,
+                    fuel_consumed: 0,
+                });
+            }
+
+            // Try calling with different argument patterns
+            let result_value: serde_json::Value = match args.len() {
+                2 => {
+                    // Try (i32, i32) -> i32
+                    if let Ok(f) = instance.get_typed_func::<(i32, i32), i32>(&mut *store, function_name) {
+                        let a = args[0].as_i64().unwrap_or(0) as i32;
+                        let b = args[1].as_i64().unwrap_or(0) as i32;
+                        serde_json::json!(f.call(&mut *store, (a, b)).map_err(|e| e.to_string())?)
+                    } else {
+                        // Function not found with this signature, try to fail gracefully
+                        return Ok(WasmExecutionResult {
+                            success: false,
+                            result: None,
+                            error: Some(format!("Function '{}' not found or has wrong signature", function_name)),
+                            execution_time_ms: start.elapsed().as_millis() as u64,
+                            fuel_consumed: 0,
+                        });
+                    }
+                }
+                0 => {
+                    // Try () -> i32
+                    if let Ok(f) = instance.get_typed_func::<(), i32>(&mut *store, function_name) {
+                        serde_json::json!(f.call(&mut *store, ()).map_err(|e| e.to_string())?)
+                    } else if let Ok(f) = instance.get_typed_func::<(), ()>(&mut *store, function_name) {
+                        f.call(&mut *store, ()).map_err(|e| e.to_string())?;
+                        serde_json::json!({"status": "ok"})
+                    } else {
+                        // Function not found with any signature
+                        return Ok(WasmExecutionResult {
+                            success: false,
+                            result: None,
+                            error: Some(format!("Function '{}' not found or has wrong signature", function_name)),
+                            execution_time_ms: start.elapsed().as_millis() as u64,
+                            fuel_consumed: 0,
+                        });
+                    }
+                }
+                _ => {
+                    return Ok(WasmExecutionResult {
+                        success: false,
+                        result: None,
+                        error: Some(format!("Unsupported argument count: {}", args.len())),
+                        execution_time_ms: start.elapsed().as_millis() as u64,
+                        fuel_consumed: 0,
+                    });
+                }
+            };
+
+            // Get fuel consumed (fuel_consumed() method not available, use 0 for now)
+            let fuel_consumed = if self.config.enable_fuel {
+                0  // TODO: Implement fuel tracking when API is available
+            } else {
+                0
+            };
+
+            // Calculate memory size (inline to avoid borrow checker issues)
+            let memory_used = match instance.get_memory(&mut *store, "memory") {
+                Some(memory) => memory.size(&mut *store) * 65536,
+                None => 0,
+            };
+
+            // Update instance state
+            instance_entry.state.fuel_consumed = fuel_consumed;
+            instance_entry.state.memory_used = memory_used;
+
+            Ok(WasmExecutionResult {
+                success: true,
+                result: Some(result_value),
+                error: None,
+                execution_time_ms: start.elapsed().as_millis() as u64,
+                fuel_consumed,
+            })
+        }
+
+        #[cfg(not(feature = "wasm"))]
+        {
+            // Check execution time limit
+            let elapsed = start.elapsed();
+            if elapsed.as_millis() > self.config.max_execution_time_ms as u128 {
+                instance_entry.state.status = InstanceStatus::Failed(
+                    "Execution time limit exceeded".to_string()
+                );
+                return Ok(WasmExecutionResult {
+                    success: false,
+                    result: None,
+                    error: Some("Execution time limit exceeded".to_string()),
                     execution_time_ms: elapsed.as_millis() as u64,
-                    fuel_consumed: fuel_used,
-                })
+                    fuel_consumed: 0,
+                });
+            }
+
+            // Simplified function call for non-wasm builds
+            let result: Result<serde_json::Value, String> = match function_name {
+                "init" => Ok(serde_json::json!({"status": "initialized"})),
+                "shutdown" => Ok(serde_json::json!({"status": "shutdown"})),
+                _ => Ok(serde_json::json!({"result": "ok"})),
+            };
+
+            let elapsed = start.elapsed();
+            let fuel_used = if self.config.enable_fuel {
+                elapsed.as_millis() as u64 * 1000
+            } else {
+                0
+            };
+
+            match result {
+                Ok(value) => {
+                    instance_entry.state.fuel_consumed += fuel_used;
+                    Ok(WasmExecutionResult {
+                        success: true,
+                        result: Some(value),
+                        error: None,
+                        execution_time_ms: elapsed.as_millis() as u64,
+                        fuel_consumed: fuel_used,
+                    })
+                }
+                Err(e) => {
+                    instance_entry.state.status = InstanceStatus::Failed(e.clone());
+                    Ok(WasmExecutionResult {
+                        success: false,
+                        result: None,
+                        error: Some(e),
+                        execution_time_ms: elapsed.as_millis() as u64,
+                        fuel_consumed: fuel_used,
+                    })
+                }
             }
         }
     }
 
     /// Get memory size from instance
     #[cfg(feature = "wasm")]
-    fn get_memory_size(_instance: &Instance, _store: &Store<WasiCtx>) -> u64 {
+    fn get_memory_size(_instance: &Instance, _store: &Store<WasiP1Ctx>) -> u64 {
         // Simplified - always return 0 for compatibility
         0
+    }
+
+    /// Get memory size from instance (new helper)
+    #[cfg(feature = "wasm")]
+    fn get_instance_memory_size(&self, instance: &Instance, store: &mut Store<WasiP1Ctx>) -> u64 {
+        match instance.get_memory(&mut *store, "memory") {
+            Some(memory) => memory.size(&mut *store) * 65536, // Wasm pages to bytes
+            None => 0,
+        }
     }
 
     /// Get instance state

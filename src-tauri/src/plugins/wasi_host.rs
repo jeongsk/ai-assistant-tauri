@@ -8,7 +8,9 @@ use std::path::Path;
 
 // WASM feature-gated imports
 #[cfg(feature = "wasm")]
-use wasmtime_wasi::{WasiCtx, WasiCtxBuilder};
+use wasmtime_wasi::WasiCtxBuilder;
+#[cfg(feature = "wasm")]
+use wasmtime_wasi::preview1::WasiP1Ctx;
 
 /// WASI context for sandboxed execution
 #[derive(Debug, Clone)]
@@ -57,23 +59,24 @@ impl WasiContext {
 
     /// Build the WASI context
     #[cfg(feature = "wasm")]
-    pub fn build(&self) -> Result<WasiCtx, String> {
+    pub fn build(&self) -> Result<WasiP1Ctx, String> {
         let mut builder = WasiCtxBuilder::new();
 
-        // Add environment variables
+        // Add environment variables (env() doesn't return Result in wasmtime 22)
         for (key, value) in &self.env_vars {
-            let _ = builder.env(key, value);
+            builder.env(key, value);
         }
 
-        // Add arguments
+        // Add arguments (arg() doesn't return Result in wasmtime 22)
         for arg in &self.args {
-            let _ = builder.arg(arg);
+            builder.arg(arg);
         }
 
-        // Note: Preopened directories are handled differently in wasmtime 22
-        // They need to be configured via the Linker when instantiating
+        // Note: Stdio capture configuration skipped - CaptureOutput not available in wasmtime 22
+        // This will be addressed in a future update
 
-        Ok(builder.build())
+        // Use build_p1() for WASI preview1
+        Ok(builder.build_p1())
     }
 
     /// Build the WASI context (non-wasm fallback)
@@ -154,7 +157,7 @@ pub struct WasiSnapshot {
 pub struct WasiHost {
     /// WASI contexts (feature-gated)
     #[cfg(feature = "wasm")]
-    contexts: HashMap<String, WasiCtx>,
+    contexts: HashMap<String, WasiP1Ctx>,
 
     /// Fallback snapshots for non-wasm builds
     #[cfg(not(feature = "wasm"))]
@@ -171,7 +174,7 @@ impl WasiHost {
 
     /// Register a WASI context
     #[cfg(feature = "wasm")]
-    pub fn register_context(&mut self, id: String, context: WasiCtx) {
+    pub fn register_context(&mut self, id: String, context: WasiP1Ctx) {
         self.contexts.insert(id, context);
     }
 
@@ -183,7 +186,7 @@ impl WasiHost {
 
     /// Get a context (wasm builds)
     #[cfg(feature = "wasm")]
-    pub fn get_context(&self, id: &str) -> Option<&WasiCtx> {
+    pub fn get_context(&self, id: &str) -> Option<&WasiP1Ctx> {
         self.contexts.get(id)
     }
 
@@ -201,14 +204,14 @@ impl WasiHost {
         }
     }
 
-    /// Build a WASI context from a builder (returns WasiCtx for wasm)
+    /// Build a WASI context from a builder (returns WasiP1Ctx for wasm)
     #[cfg(feature = "wasm")]
-    pub fn build_context(&mut self, id: String, context: WasiContext) -> Result<WasiCtx, String> {
-        let _ctx = context.build()?;
-        // Store the context without cloning (WasiCtx doesn't implement Clone)
+    pub fn build_context(&mut self, id: String, context: WasiContext) -> Result<WasiP1Ctx, String> {
+        let ctx = context.build()?;
+        // Store the context without cloning (WasiP1Ctx doesn't implement Clone)
         // For now, we'll just acknowledge the creation
         let _ = id;
-        Ok(WasiCtxBuilder::new().build())
+        Ok(ctx)
     }
 
     /// Build a WASI snapshot (returns WasiSnapshot for non-wasm)
@@ -288,8 +291,8 @@ impl<'a> WasiContextBuilder<'a> {
 
 /// Create a minimal WASI context for a plugin
 #[cfg(feature = "wasm")]
-pub fn create_minimal_wasi_context(_plugin_id: &str) -> Result<WasiCtx, String> {
-    Ok(WasiCtxBuilder::new().build())
+pub fn create_minimal_wasi_context(_plugin_id: &str) -> Result<WasiP1Ctx, String> {
+    Ok(WasiCtxBuilder::new().build_p1())
 }
 
 /// Create a minimal WASI context for a plugin (non-wasm)
@@ -303,7 +306,7 @@ pub fn create_minimal_wasi_context(plugin_id: &str) -> Result<(), String> {
 pub fn create_wasi_context_with_dir(
     _plugin_id: &str,
     work_dir: &str,
-) -> Result<WasiCtx, String> {
+) -> Result<WasiP1Ctx, String> {
     let path = Path::new(work_dir);
     if !path.exists() {
         // Create the directory if it doesn't exist
@@ -311,9 +314,9 @@ pub fn create_wasi_context_with_dir(
             .map_err(|e| format!("Failed to create work directory: {}", e))?;
     }
 
-    // In wasmtime 22, directory preopening is done through the Linker
-    // For now, create a simple WASI context
-    Ok(WasiCtxBuilder::new().build())
+    // For now, create minimal context
+    // Directory preopening will be added in a future step
+    Ok(WasiCtxBuilder::new().build_p1())
 }
 
 /// Create a WASI context with working directory (non-wasm)

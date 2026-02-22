@@ -91,7 +91,16 @@ impl PluginSandbox {
         for perm in &self.context.permissions {
             if let PluginPermission::FileSystem { paths, access: perm_access } = perm {
                 for allowed_path in paths {
-                    if path.starts_with(allowed_path)
+                    // Use canonicalize to prevent path traversal attacks (../)
+                    let canonical_path = std::path::Path::new(path)
+                        .canonicalize()
+                        .map_err(|_| format!("Invalid path: {}", path))?;
+                    let canonical_allowed = std::path::Path::new(allowed_path)
+                        .canonicalize()
+                        .map_err(|_| format!("Invalid allowed path: {}", allowed_path))?;
+
+                    // Check if canonical path starts with canonical allowed path
+                    if canonical_path.starts_with(&canonical_allowed)
                         && (access == "read" || perm_access == "readwrite") {
                             return Ok(());
                         }

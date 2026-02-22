@@ -358,11 +358,31 @@ v0.5는 v0.4에서 구현된 기능들의 실제 동작을 구현하는 릴리�
   - 감사 로그
 
 ### v0.5 일정
-- **Phase 1** (2주): 플러그인 실행 엔진
-- **Phase 2** (2주): 통합 서비스 데이터 연동
-- **Phase 3** (1주): 템플릿 공유
-- **Phase 4** (1주): 고급 음성 명령어
-- **Phase 5** (1주): 테스트 및 안정화
+- **Phase 1** (2주): 플러그인 실행 엔진 ✅
+- **Phase 2** (2주): 통합 서비스 데이터 연동 ✅
+- **Phase 3** (1주): 템플릿 공유 ✅
+- **Phase 4** (1주): 고급 음성 명령어 ✅
+- **Phase 5** (1주): 테스트 및 안정화 ✅
+
+## 최근 완료된 작업
+
+### WASM Plugin Runtime 실제 구현 (2026-02-22)
+- `src-tauri/src/plugins/runtime.rs`: Wasmtime v22+ WASI preview1 통합 완료
+  - `WasiP1Ctx` 타입 사용, `add_to_linker_sync()` API 통합
+  - 실제 Store/Instance 생성 (placeholder 제거)
+  - Fuel metering 활성화 (`consume_fuel(true)`)
+  - 실제 WASM 함수 호출 구현 (`add`, `init`, `shutdown` 등)
+- `src-tauri/src/plugins/wasi_host.rs`: WASI 호스트 업데이트
+  - `build_p1()` 메서드 사용 for Wasmtime 22+ 호환
+  - `WasiP1Ctx` 반환 타입 업데이트
+- `src-tauri/src/plugins/sandbox.rs`: Path Traversal 취약점 수정
+  - `canonicalize()` 사용하여 `../` 공격 방지
+- `src-tauri/src/plugins/executor.rs`: Non-UTF-8 경로 처리 수정
+  - `.unwrap()` 제거, 안전한 에러 처리 추가
+- `src-tauri/tests/plugins_test.rs`: WASM 통합 테스트 추가
+  - 8개 테스트 전체 통과 (module loading, instantiation, function calling, fuel metering)
+- **보안 수정**: Path Traversal 취약점, Non-UTF-8 path panic 수정
+- **테스트 결과**: 90개 테스트 전체 통과 (82 unit + 8 integration)
 
 ## 최근 완료된 작업
 

@@ -2,7 +2,7 @@
 mod db;
 mod sidecar;
 pub mod voice;
-mod plugins;
+pub mod plugins;
 mod collaboration;
 mod scheduler;
 mod marketplace;
