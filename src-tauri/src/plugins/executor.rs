@@ -199,17 +199,22 @@ impl PluginExecutor {
     pub async fn stop_plugin(&mut self, id: &str) -> Result<(), String> {
         let mut plugins = self.running_plugins.lock().unwrap();
 
-        if let Some(plugin) = plugins.get_mut(id) {
-            plugin.state = PluginInstanceState::Stopping;
-        }
+        // Get the plugin before removing to access its fields
+        let instance_id = plugins.get_mut(id).and_then(|p| {
+            p.state = PluginInstanceState::Stopping;
+            #[cfg(feature = "wasm")]
+            return p.wasm_instance_id.clone();
+            #[cfg(not(feature = "wasm"))]
+            return None;
+        });
 
         // Remove from running plugins
-        let plugin = plugins.remove(id)
+        let _plugin = plugins.remove(id)
             .ok_or_else(|| format!("Plugin {} not found", id))?;
 
         // Stop monitoring
         #[cfg(feature = "wasm")]
-        if let Some(instance_id) = plugin.wasm_instance_id {
+        if let Some(instance_id) = instance_id {
             let mut monitor = self.monitor.lock().unwrap();
             monitor.stop_monitoring(&instance_id);
 

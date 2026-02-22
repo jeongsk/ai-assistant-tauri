@@ -133,7 +133,7 @@ impl NodeExecutor for ConditionExecutor {
 pub struct LoopExecutor;
 
 impl NodeExecutor for LoopExecutor {
-    fn execute(&self, node: &WorkflowNode, context: &NodeContext) -> NodeResult {
+    fn execute(&self, node: &WorkflowNode, _context: &NodeContext) -> NodeResult {
         // Get loop configuration
         let items = node.data.get("items")
             .and_then(|v| v.as_array())

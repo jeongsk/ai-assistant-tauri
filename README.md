@@ -126,7 +126,7 @@ ai-assistant-tauri/
 - [x] Integration services (PostgreSQL, MySQL, Git, S3)
 - [x] Template sharing with version control
 - [x] Voice commands with multi-turn conversations
-- [x] Full test coverage (81 tests passing)
+- [x] Full test coverage (168 tests passing)
 
 ## License
 

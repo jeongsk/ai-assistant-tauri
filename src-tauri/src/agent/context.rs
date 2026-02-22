@@ -158,7 +158,7 @@ impl ContextCompressor {
         }
     }
     
-    fn priority_only(&self, messages: &mut Vec<Message>, target: usize) -> CompressionResult {
+    fn priority_only(&self, messages: &mut Vec<Message>, _target: usize) -> CompressionResult {
         let original_tokens: usize = messages.iter().map(|m| m.token_count).sum();
         let mut removed = 0;
         

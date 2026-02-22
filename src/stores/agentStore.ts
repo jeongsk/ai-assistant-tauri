@@ -9,7 +9,6 @@ import { invoke } from '@tauri-apps/api/core';
 import type {
   Message,
   MessageRole,
-  MessagePriority,
   CompressionStrategy,
   CompressionResult,
   SubAgentTask,
@@ -18,6 +17,7 @@ import type {
   AggregatedResult,
   ImageAnalysis,
 } from '../types/agent';
+import { MessagePriority } from '../types/agent';
 
 interface AgentState {
   // Context state
@@ -41,7 +41,7 @@ interface AgentState {
   getMessages: () => Promise<Message[]>;
   clearContext: () => Promise<void>;
   getTokenCount: () => Promise<number>;
-  isNearLimit: () => Promise<boolean>;
+  checkIsNearLimit: () => Promise<boolean>;
   compressContext: () => Promise<CompressionResult>;
   setCompressionStrategy: (strategy: CompressionStrategy, minTokens?: number, targetRatio?: number) => Promise<void>;
 
@@ -142,7 +142,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     }
   },
 
-  isNearLimit: async () => {
+  checkIsNearLimit: async () => {
     try {
       const near = await invoke<boolean>('agent_context_is_near_limit');
       set({ isNearLimit: near });

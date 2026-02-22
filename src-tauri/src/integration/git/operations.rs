@@ -5,7 +5,6 @@
 #![allow(dead_code)]
 
 use serde::{Deserialize, Serialize};
-use std::path::Path;
 
 /// Get list of conflicted files
 #[cfg(feature = "git")]
@@ -169,6 +168,7 @@ impl GitOperations {
     #[cfg(feature = "git")]
     pub fn clone(url: &str, path: &str) -> Result<GitOperationResult, String> {
         use std::time::Instant;
+        use std::path::Path;
 
         let start = Instant::now();
 

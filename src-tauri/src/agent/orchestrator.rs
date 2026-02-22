@@ -198,7 +198,8 @@ pub struct AgentOrchestrator {
     task_queue: Arc<RwLock<TaskQueue>>,
     /// Completed results
     completed: Arc<RwLock<HashMap<String, TaskResult>>>,
-    /// Maximum concurrent tasks
+    /// Maximum concurrent tasks (reserved for future use)
+    #[allow(dead_code)]
     max_concurrent: usize,
 }
 

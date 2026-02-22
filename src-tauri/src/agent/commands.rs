@@ -8,15 +8,15 @@ use tokio::sync::Mutex;
 
 use super::multimodal::{
     MultimodalProcessor, InputType, ImageFormat, MultimodalResult,
-    ImageAnalysis, ObjectDetection
+    ImageAnalysis
 };
 use super::context::{
     ContextManager, Message, MessageRole, MessagePriority, CompressionStrategy,
-    CompressorConfig, ContextCompressor
+    CompressorConfig
 };
 use super::orchestrator::{
-    AgentOrchestrator, SubAgentTask, TaskInput, TaskPriority, TaskResult,
-    AgentType, MockSubAgent, SubAgent
+    AgentOrchestrator, SubAgentTask, TaskInput, TaskPriority,
+    AgentType
 };
 
 /// Global state for agent features
@@ -226,7 +226,7 @@ pub async fn agent_context_set_strategy(
     min_tokens: Option<usize>,
     target_ratio: Option<f32>,
 ) -> Result<(), String> {
-    let mut manager = state.context_manager.lock().await;
+    let _manager = state.context_manager.lock().await;
 
     let compression_strategy = match strategy.as_str() {
         "remove_oldest" => CompressionStrategy::RemoveOldest,
@@ -236,7 +236,7 @@ pub async fn agent_context_set_strategy(
         _ => return Err("Invalid compression strategy".to_string()),
     };
 
-    let config = CompressorConfig {
+    let _config = CompressorConfig {
         strategy: compression_strategy,
         min_tokens: min_tokens.unwrap_or(512),
         target_ratio: target_ratio.unwrap_or(0.5),

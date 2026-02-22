@@ -11,8 +11,8 @@ use super::store::{
     InMemoryWorkflowStore, WorkflowStore
 };
 use super::engine::{WorkflowExecutor, ExecutionResult};
-use super::triggers::{TriggerManager, Trigger, TriggerType};
-use super::nodes::{NodeExecutor, TriggerExecutor, ActionExecutor, ConditionExecutor, LoopExecutor, AgentExecutor};
+use super::triggers::{TriggerManager, Trigger};
+use super::nodes::{TriggerExecutor, ActionExecutor, ConditionExecutor, LoopExecutor, AgentExecutor};
 
 /// Global state for workflow features
 pub struct WorkflowState {

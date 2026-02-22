@@ -68,9 +68,11 @@ pub struct SyncManager {
     conflict_resolver: ConflictResolver,
     /// Pending operations
     pending: Arc<RwLock<Vec<PendingSyncOp>>>,
-    /// Last sync timestamps
+    /// Last sync timestamps (reserved for future auto-sync feature)
+    #[allow(dead_code)]
     last_sync: Arc<RwLock<HashMap<(SyncEntity, String), DateTime<Utc>>>>,
-    /// Auto sync interval
+    /// Auto sync interval (reserved for future auto-sync feature)
+    #[allow(dead_code)]
     sync_interval: Duration,
 }
 
@@ -81,7 +83,11 @@ struct PendingSyncOp {
     id: String,
     operation: SyncOperation,
     data: Option<Vec<u8>>,
+    /// Retry count (reserved for future retry logic)
+    #[allow(dead_code)]
     retries: usize,
+    /// Creation timestamp (reserved for future timeout logic)
+    #[allow(dead_code)]
     created_at: DateTime<Utc>,
 }
 
@@ -166,7 +172,7 @@ impl SyncManager {
         
         let mut uploaded = 0;
         let mut downloaded = 0;
-        let mut conflicts = Vec::new();
+        let conflicts = Vec::new();
         let mut errors = Vec::new();
         
         // Process pending operations
