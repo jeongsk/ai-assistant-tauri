@@ -3,7 +3,7 @@
 use rusqlite::Connection;
 use rusqlite::Result;
 
-const _SCHEMA_VERSION: i32 = 7;
+const _SCHEMA_VERSION: i32 = 10;
 
 pub fn run_migrations(conn: &Connection) -> Result<()> {
     // Create migrations table if not exists
@@ -51,6 +51,18 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
 
     if current_version < 7 {
         migrate_v7(conn)?;
+    }
+
+    if current_version < 8 {
+        migrate_v8(conn)?;
+    }
+
+    if current_version < 9 {
+        migrate_v9(conn)?;
+    }
+
+    if current_version < 10 {
+        migrate_v10(conn)?;
     }
 
     Ok(())
@@ -458,6 +470,133 @@ fn migrate_v7(conn: &Connection) -> Result<()> {
     )?;
 
     tracing::info!("Database migration v7 completed");
+
+    Ok(())
+}
+
+/// Migration v8: Add tables for workflow automation
+///
+/// This migration:
+/// 1. Creates `workflows` table for workflow definitions
+/// 2. Creates `workflow_executions` table for execution history
+fn migrate_v8(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        r#"
+        -- Create workflows table
+        CREATE TABLE IF NOT EXISTS workflows (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT,
+            definition TEXT NOT NULL,
+            version INTEGER NOT NULL DEFAULT 1,
+            is_active INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        -- Create workflow_executions table
+        CREATE TABLE IF NOT EXISTS workflow_executions (
+            id TEXT PRIMARY KEY,
+            workflow_id TEXT NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+            status TEXT NOT NULL CHECK(status IN ('pending', 'running', 'completed', 'failed', 'cancelled')),
+            trigger_type TEXT,
+            started_at TEXT,
+            completed_at TEXT,
+            result TEXT,
+            error TEXT
+        );
+
+        -- Indexes
+        CREATE INDEX IF NOT EXISTS idx_workflows_name ON workflows(name);
+        CREATE INDEX IF NOT EXISTS idx_workflows_is_active ON workflows(is_active);
+        CREATE INDEX IF NOT EXISTS idx_workflow_executions_workflow_id ON workflow_executions(workflow_id);
+        CREATE INDEX IF NOT EXISTS idx_workflow_executions_status ON workflow_executions(status);
+        CREATE INDEX IF NOT EXISTS idx_workflow_executions_started_at ON workflow_executions(started_at);
+
+        -- Record migration
+        INSERT INTO schema_migrations (version) VALUES (8);
+        "#,
+    )?;
+
+    tracing::info!("Database migration v8 completed");
+
+    Ok(())
+}
+
+/// Migration v9: Add voice profiles table
+///
+/// This migration:
+/// 1. Creates `voice_profiles` table for user voice profiles
+fn migrate_v9(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        r#"
+        -- Create voice_profiles table
+        CREATE TABLE IF NOT EXISTS voice_profiles (
+            id TEXT PRIMARY KEY,
+            user_id TEXT,
+            name TEXT NOT NULL,
+            language TEXT NOT NULL DEFAULT 'en',
+            preferred_voice TEXT,
+            adaptation_data BLOB,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        -- Indexes
+        CREATE INDEX IF NOT EXISTS idx_voice_profiles_user_id ON voice_profiles(user_id);
+        CREATE INDEX IF NOT EXISTS idx_voice_profiles_language ON voice_profiles(language);
+
+        -- Record migration
+        INSERT INTO schema_migrations (version) VALUES (9);
+        "#,
+    )?;
+
+    tracing::info!("Database migration v9 completed");
+
+    Ok(())
+}
+
+/// Migration v10: Add cloud sync tables
+///
+/// This migration:
+/// 1. Creates `sync_queue` table for offline sync operations
+/// 2. Creates `sync_metadata` table for tracking sync state
+fn migrate_v10(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        r#"
+        -- Create sync_queue table
+        CREATE TABLE IF NOT EXISTS sync_queue (
+            id TEXT PRIMARY KEY,
+            operation TEXT NOT NULL CHECK(operation IN ('upload', 'download', 'delete')),
+            entity_type TEXT NOT NULL,
+            entity_id TEXT NOT NULL,
+            data TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            attempts INTEGER DEFAULT 0,
+            last_error TEXT
+        );
+
+        -- Create sync_metadata table
+        CREATE TABLE IF NOT EXISTS sync_metadata (
+            entity_type TEXT NOT NULL,
+            entity_id TEXT NOT NULL,
+            local_version TEXT NOT NULL,
+            remote_version TEXT,
+            last_synced TEXT,
+            is_dirty INTEGER DEFAULT 0,
+            PRIMARY KEY (entity_type, entity_id)
+        );
+
+        -- Indexes
+        CREATE INDEX IF NOT EXISTS idx_sync_queue_entity ON sync_queue(entity_type, entity_id);
+        CREATE INDEX IF NOT EXISTS idx_sync_queue_created_at ON sync_queue(created_at);
+        CREATE INDEX IF NOT EXISTS idx_sync_metadata_is_dirty ON sync_metadata(is_dirty);
+
+        -- Record migration
+        INSERT INTO schema_migrations (version) VALUES (10);
+        "#,
+    )?;
+
+    tracing::info!("Database migration v10 completed");
 
     Ok(())
 }

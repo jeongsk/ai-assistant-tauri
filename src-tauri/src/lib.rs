@@ -9,6 +9,11 @@ mod marketplace;
 mod integration;
 mod security;
 
+// v0.6 modules
+pub mod agent;
+pub mod workflow;
+pub mod sync;
+
 use scheduler::JobScheduler;
 use security::CredentialManager;
 use plugins::PluginExecutor;
