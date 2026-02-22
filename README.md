@@ -9,6 +9,10 @@ A privacy-first AI assistant desktop app built with Tauri, React, and MCP.
 - 📁 File operations (read, write, organize)
 - 🎨 Modern UI with dark mode
 - 🔧 Extensible via MCP protocol
+- 🔌 WASM plugin system with sandbox execution
+- 🔗 External integrations (PostgreSQL, MySQL, Git, AWS S3)
+- 📄 Template sharing with version control
+- 🎤 Voice commands with multi-turn conversations
 
 ## Tech Stack
 
@@ -102,6 +106,27 @@ ai-assistant-tauri/
 - [x] Recipe engine
 - [x] Browser automation
 - [x] Memory persistence
+
+### v0.3 ✅
+- [x] Sub-agent system
+- [x] Multi-provider routing
+- [x] Cron job scheduling
+- [x] Tauri integration
+- [x] Agent Runtime job execution
+
+### v0.4 ✅
+- [x] Memory system
+- [x] Voice support (STT/TTS)
+- [x] Plugin system
+- [x] Integration features
+- [x] Collaboration features
+
+### v0.5 ✅
+- [x] WASM plugin runtime
+- [x] Integration services (PostgreSQL, MySQL, Git, S3)
+- [x] Template sharing with version control
+- [x] Voice commands with multi-turn conversations
+- [x] Full test coverage (81 tests passing)
 
 ## License
 

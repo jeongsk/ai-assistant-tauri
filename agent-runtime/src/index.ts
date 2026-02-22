@@ -13,6 +13,7 @@ import type {
   ChatOptions,
   ChatResponse,
   ProviderConfig,
+  BaseProvider,
 } from "./providers/base.js";
 
 // Simple logger
@@ -23,7 +24,7 @@ const logger = {
 };
 
 // Provider storage
-let providers: Map<string, any> = new Map();
+let providers: Map<string, BaseProvider> = new Map();
 let activeProvider: string | null = null;
 
 // JSON-RPC interface
@@ -172,7 +173,7 @@ function createProvider(config: ProviderConfig) {
 }
 
 // Get active provider
-function getActiveProvider() {
+function getActiveProvider(): BaseProvider {
   if (!activeProvider) {
     throw new Error("No active provider configured");
   }
@@ -184,6 +185,9 @@ function getActiveProvider() {
 
   return provider;
 }
+
+// Export provider accessor for use by AgentCore
+export { getActiveProvider };
 
 // Handle chat request
 async function handleChat(params: any) {

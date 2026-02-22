@@ -52,7 +52,7 @@ wasmtime = { version = "22", optional = true, features = ["runtime", "cranelift"
 wasmtime-wasi = { version = "22", optional = true }
 
 [features]
-default = []
+default = ["voice"]
 database = ["tokio-postgres", "mysql_async"]
 git = ["git2", "walkdir"]
 cloud = ["aws-config", "aws-sdk-s3"]

@@ -113,6 +113,43 @@ cargo test       # Rust 테스트
 - **v0.2** ✅: 스킬 시스템, 레시피 엔진, Browser MCP, 메모리 지속성
 - **v0.3** ✅: 서브에이전트, 다중 제공자 라우팅, **Cron 작업 ✅**, **Tauri 통합 ✅**, **Agent Runtime 연동 ✅**, **DB 영속성 ✅**
 - **v0.4** ✅: 메모리 시스템 ✅, 음성 지원 ✅, 플러그인 시스템 ✅, 통합 기능 ✅, 협업 기능 ✅
+- **v0.5** ✅: WASM 플러그인 런타임 ✅, 통합 서비스 연동 ✅, 템플릿 공유 ✅, 음성 명령어 ✅, 테스트 완료 ✅
+
+---
+
+# v0.5 Release Notes (2026-02-22)
+
+## Overview
+v0.5는 v0.4에서 구현된 기능들의 실제 동작을 구현하는 메이저 업데이트입니다.
+
+## New Features
+
+### 🔌 WASM Plugin Runtime (Phase 1)
+- Wasmtime 기반 샌드박스 실행 환경
+- WASI 호스트 구현
+- 리소스 모니터링 (메모리, CPU, 실행 시간)
+
+### 🔗 Integration Services (Phase 2)
+- PostgreSQL/MySQL 실제 쿼리 실행
+- Git commit/push/pull 연동
+- AWS S3 업로드/다운로드
+
+### 📄 Template Sharing (Phase 3)
+- JSON import/export
+- 템플릿 버전 관리
+- 팀 공유 기능
+
+### 🎤 Voice Commands (Phase 4)
+- 음성 명령어 파싱 (영어/한국어)
+- AgentRuntime 라우팅
+- 멀티턴 음성 대화
+
+### ✅ Testing (Phase 5)
+- 81개 테스트 전체 통과
+- 빌드 검증 완료
+- 경고 정리 (46 → 11)
+
+자세한 내용은 `docs/v0.5-release-notes.md` 참고.
 
 ---
 
