@@ -12,6 +12,34 @@ use crate::voice::TranscriptionResult;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex, RwLock};
 use std::path::{Path, PathBuf};
+use thiserror::Error;
+
+/// STT error types
+#[derive(Debug, Error)]
+pub enum SttError {
+    #[error("Model not found: {0}")]
+    ModelNotFound(String),
+
+    #[error("Failed to load model: {0}")]
+    ModelLoadFailed(String),
+
+    #[error("Invalid audio format: {0}")]
+    InvalidAudioFormat(String),
+
+    #[error("Transcription failed: {0}")]
+    TranscriptionFailed(String),
+
+    #[error("Whisper error: {0}")]
+    WhisperError(#[from] whisper_rs::WhisperError),
+
+    #[error("IO error: {0}")]
+    IoError(#[from] std::io::Error),
+
+    #[error("State lock error: {0}")]
+    LockError(String),
+}
+
+pub type SttResult<T> = Result<T, SttError>;
 
 /// STT engine configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,7 +85,7 @@ impl Default for SttConfig {
 
 /// Audio parameters for processing
 #[derive(Debug, Clone)]
-struct AudioParams {
+pub struct AudioParams {
     pub sample_rate: u32,
     pub channels: u16,
     pub bits_per_sample: u16,
@@ -81,20 +109,21 @@ pub struct VadResult {
     pub energy_db: f32,
 }
 
-/// Placeholder Whisper context
-/// When whisper-rs is integrated, replace this with whisper_rs::WhisperContext
-#[derive(Debug)]
-struct WhisperContext {
-    _model_path: PathBuf,
-}
+// Maximum audio size: 10 minutes at 16kHz mono = ~10MB
+const MAX_AUDIO_SIZE: usize = 10 * 1024 * 1024;
+
+// Use whisper_rs types directly when voice feature is enabled
+#[cfg(feature = "voice")]
+pub use whisper_rs::{WhisperContext, WhisperState};
 
 /// STT engine with model management
-#[derive(Debug, Clone)]
-struct SttEngine {
+/// Note: Clone is removed because WhisperContext is not Clone
+/// Use Arc for shared access
+pub struct SttEngine {
     config: SttConfig,
     model_loaded: Arc<RwLock<bool>>,
     model_path: Arc<Mutex<Option<PathBuf>>>,
-    engine_handle: Arc<Mutex<Option<WhisperContext>>>,
+    whisper_context: Arc<Mutex<Option<WhisperContext>>>,
     app_handle: Arc<Mutex<Option<tauri::AppHandle>>>,
 }
 
@@ -132,20 +161,26 @@ pub fn init_stt(model: String) -> Result<String, String> {
 pub fn transcribe(audio_data: Vec<u8>, language: String) -> Result<TranscriptionResult, String> {
     let start_time = std::time::Instant::now();
 
-    // Get or create STT engine
-    let engine = {
-        let guard = STT_ENGINE
-            .lock()
-            .map_err(|e| format!("Failed to acquire STT lock: {}", e))?;
-        guard.clone()
-    };
+    // Get STT engine reference (no clone since WhisperContext is not Clone)
+    let engine_guard = STT_ENGINE
+        .lock()
+        .map_err(|e| format!("Failed to acquire STT lock: {}", e))?;
 
-    let engine = engine
+    let engine = engine_guard
+        .as_ref()
         .ok_or_else(|| "STT engine not initialized. Call init_stt first.".to_string())?;
 
     // Validate audio data
     if audio_data.is_empty() {
         return Err("Audio data is empty".to_string());
+    }
+
+    // Check maximum audio size to prevent DoS
+    if audio_data.len() > MAX_AUDIO_SIZE {
+        return Err(format!(
+            "Audio data exceeds maximum size of {} bytes (about 10 minutes at 16kHz)",
+            MAX_AUDIO_SIZE
+        ));
     }
 
     // Check minimum audio length (44 bytes is WAV header + 1 sample)
@@ -171,7 +206,8 @@ pub fn transcribe(audio_data: Vec<u8>, language: String) -> Result<Transcription
     };
 
     // Perform actual transcription
-    let result = engine.transcribe_audio(&audio_samples, &audio_params, &config)?;
+    let result = engine.transcribe_audio(&audio_samples, &audio_params, &config)
+        .map_err(|e| e.to_string())?;
 
     println!("[STT] Transcription completed in {:?}", start_time.elapsed());
 
@@ -194,7 +230,7 @@ struct TranscriptionOutput {
 
 /// Individual transcription segment
 #[derive(Debug, Clone)]
-struct TranscriptionSegment {
+pub struct TranscriptionSegment {
     pub text: String,
     pub start_time_ms: u64,
     pub end_time_ms: u64,
@@ -216,14 +252,15 @@ impl SttEngine {
 
         println!("[STT] Loading model from: {}", model_path.display());
 
-        // Load Whisper context
-        let context = Self::load_whisper_model(&model_path)?;
+        // Load Whisper context using actual whisper-rs
+        let context = Self::load_whisper_model(&model_path)
+            .map_err(|e| format!("Failed to load Whisper model: {}", e))?;
 
         Ok(Self {
             config,
             model_loaded: Arc::new(RwLock::new(true)),
             model_path: Arc::new(Mutex::new(Some(model_path))),
-            engine_handle: Arc::new(Mutex::new(Some(context))),
+            whisper_context: Arc::new(Mutex::new(Some(context))),
             app_handle: Arc::new(Mutex::new(None)),
         })
     }
@@ -275,39 +312,40 @@ impl SttEngine {
         Ok(default_path)
     }
 
-    /// Load Whisper model from file
-    fn load_whisper_model(model_path: &Path) -> Result<WhisperContext, String> {
+    /// Load Whisper model from file using whisper-rs
+    pub fn load_whisper_model(model_path: &Path) -> SttResult<WhisperContext> {
         println!("[STT] Loading Whisper model from: {}", model_path.display());
 
         // Check file exists and is readable
         if !model_path.exists() {
-            return Err(format!("Model file not found: {}", model_path.display()));
+            return Err(SttError::ModelNotFound(model_path.display().to_string()));
         }
 
-        let metadata = std::fs::metadata(model_path)
-            .map_err(|e| format!("Cannot read model file: {}", e))?;
-
+        let metadata = std::fs::metadata(model_path)?;
         println!("[STT] Model file size: {} bytes", metadata.len());
 
-        // Validate it's a valid ggml model file (check magic number)
-        if metadata.len() < 4 {
-            return Err("Model file too small to be valid".to_string());
+        // Validate it's a valid ggml model file (check minimum size)
+        if metadata.len() < 1024 * 1024 {
+            return Err(SttError::ModelLoadFailed(
+                "Model file too small to be valid".to_string()
+            ));
         }
 
-        // Placeholder context - in production with whisper-rs:
-        // let params = whisper_rs::WhisperContextParameters {
-        //     use_gpu: true,
-        //     ..Default::default()
-        // };
-        // let ctx = whisper_rs::WhisperContext::new_with_params(
-        //     model_path.to_str().ok_or("Invalid model path")?,
-        //     params
-        // ).map_err(|e| format!("Failed to load Whisper model: {}", e))?;
-        // Ok(ctx)
+        // Create Whisper context with CPU-only parameters for v0.5
+        let params = whisper_rs::WhisperContextParameters {
+            use_gpu: false,  // CPU-only for cross-platform compatibility
+            ..Default::default()
+        };
 
-        Ok(WhisperContext {
-            _model_path: model_path.to_path_buf(),
-        })
+        let ctx = WhisperContext::new_with_params(
+            model_path.to_str().ok_or_else(|| SttError::ModelLoadFailed(
+                "Invalid model path (non-UTF8)".to_string()
+            ))?,
+            params
+        )?;
+
+        println!("[STT] Model loaded successfully");
+        Ok(ctx)
     }
 
     /// Get the model path as a string
@@ -320,103 +358,93 @@ impl SttEngine {
             .unwrap_or_else(|| "unknown".to_string())
     }
 
-    /// Transcribe audio samples
+    /// Transcribe audio samples using Whisper
     fn transcribe_audio(
         &self,
         samples: &[f32],
         params: &AudioParams,
         config: &SttConfig,
-    ) -> Result<TranscriptionOutput, String> {
+    ) -> Result<TranscriptionOutput, SttError> {
         println!(
             "[STT] Transcribing {} samples at {} Hz",
             samples.len(),
             params.sample_rate
         );
 
-        // In production with whisper-rs, this would be:
-        // let mut ctx = self.engine_handle.lock().unwrap();
-        // let ctx = ctx.as_mut().ok_or("Whisper context not initialized")?;
-        //
-        // // Set parameters
-        // let mut wparams = whisper_rs::WhisperParameters::default();
-        // wparams.n_threads = config.threads;
-        // wparams.n_max_text_ctx = 224;
-        // wparams.offset_ms = 0;
-        // wparams.duration_ms = 0;
-        // wparams.translate = config.translate;
-        // wparams.no_context = config.no_context;
-        // wparams.single_segment = config.single_segment;
-        // wparams.print_special = config.print_special;
-        // wparams.print_progress = config.print_progress;
-        // wparams.print_realtime = config.print_realtime;
-        // wparams.print_timestamps = config.print_timestamps;
-        // wparams.token_timestamps = config.token_timestamps;
-        // wparams.temperature = config.temperature;
-        // wparams.max_initial_ts = config.max_initial_ts.unwrap_or(1.0);
-        // wparams.length_penalty = config.length_penalty;
-        //
-        // // Run full transcription
-        // let result = ctx.full(wparams, samples, params.sample_rate as i32)
-        //     .map_err(|e| format!("Whisper inference failed: {}", e))?;
-        //
-        // // Extract text segments
-        // let mut full_text = String::new();
-        // let mut segments = Vec::new();
-        // let num_segments = result.num_segments();
-        //
-        // for i in 0..num_segments {
-        //     let segment = result.get_segment(i)
-        //         .map_err(|e| format!("Failed to get segment: {}", e))?;
-        //     let text = segment.get_text().unwrap_or("");
-        //     let start = segment.get_t0();
-        //     let end = segment.get_t1();
-        //
-        //     full_text.push_str(text);
-        //     segments.push(TranscriptionSegment {
-        //         text: text.to_string(),
-        //         start_time_ms: start as u64 * 10,
-        //         end_time_ms: end as u64 * 10,
-        //         confidence: 0.9, // Whisper doesn't provide per-token confidence
-        //     });
-        // }
-        //
-        // // Detect language if not specified
-        // let detected_lang = if let Some(ref lang) = config.language {
-        //     Some(lang.clone())
-        // } else {
-        //     ctx.full_default(params.sample_rate as i32, samples)
-        //         .ok()
-        //         .and_then(|r| r.lang_max().ok())
-        //         .map(|id| whisper_rs::WhisperContext::lang_id_to_str(id).to_string())
-        // };
-        //
-        // Ok(TranscriptionOutput {
-        //     text: full_text.trim().to_string(),
-        //     confidence: 0.9,
-        //     language: detected_lang,
-        //     segments,
-        // })
+        // 1. Resample to 16kHz if needed (Whisper requires 16kHz mono)
+        let processed_samples = if params.sample_rate != 16000 {
+            resample_audio(samples, params.sample_rate, 16000)
+        } else {
+            samples.to_vec()
+        };
 
-        // For now, return a placeholder result
-        // This will be replaced with actual Whisper inference when whisper-rs is integrated
-        let detected_language = config
-            .language
-            .clone()
-            .or_else(|| Self::detect_language_from_samples(samples).ok());
+        // 2. Get Whisper context
+        let mut ctx_guard = self.whisper_context.lock()
+            .map_err(|e| SttError::LockError(e.to_string()))?;
+        let ctx = ctx_guard.as_mut()
+            .ok_or_else(|| SttError::TranscriptionFailed("Whisper context not initialized".to_string()))?;
+
+        // 3. Create state for this transcription (whisper-rs v0.15 pattern)
+        let mut state = ctx.create_state()
+            .map_err(|e| SttError::TranscriptionFailed(format!("Failed to create state: {}", e)))?;
+
+        // 4. Configure FullParams with correct syntax for whisper-rs v0.15
+        let mut wparams = whisper_rs::FullParams::new(
+            whisper_rs::SamplingStrategy::Greedy { best_of: 1 }
+        );
+
+        wparams.set_n_threads(config.threads as i32);
+        wparams.set_translate(config.translate);
+        wparams.set_language(config.language.as_deref());
+        wparams.set_offset_ms(0);
+        wparams.set_duration_ms(0);
+
+        // 5. Run inference using state
+        state.full(wparams, &processed_samples)
+            .map_err(|e| SttError::TranscriptionFailed(format!("Inference failed: {}", e)))?;
+
+        // 6. Extract segments from state using iterator
+        let mut full_text = String::new();
+        let mut segments = Vec::new();
+
+        for segment in state.as_iter() {
+            // Use to_str_lossy() to handle potential invalid UTF-8
+            let segment_text = segment.to_str_lossy()
+                .unwrap_or_else(|_| std::borrow::Cow::Borrowed(""));
+
+            let start = segment.start_timestamp();  // Returns i64 in centiseconds
+            let end = segment.end_timestamp();       // Returns i64 in centiseconds
+
+            full_text.push_str(&segment_text);
+            segments.push(TranscriptionSegment {
+                text: segment_text.to_string(),
+                start_time_ms: start as u64 * 10,  // Convert centiseconds to milliseconds
+                end_time_ms: end as u64 * 10,
+                confidence: 0.9, // Whisper doesn't provide per-segment confidence
+            });
+        }
+
+        // 7. Detect language if not specified
+        let detected_lang = if let Some(ref lang) = config.language {
+            Some(lang.clone())
+        } else {
+            // Use lang_id from state
+            let lang_id = state.full_lang_id_from_state();
+            let lang_opt = whisper_rs::get_lang_str(lang_id);
+            lang_opt.map(|s| s.to_string())
+        };
 
         Ok(TranscriptionOutput {
-            text: String::new(), // Will be replaced with actual transcription
-            confidence: 0.0,
-            language: detected_language,
-            segments: Vec::new(),
+            text: full_text.trim().to_string(),
+            confidence: 0.9,
+            language: detected_lang,
+            segments,
         })
     }
 
-    /// Detect language from audio samples (simplified)
+    /// Detect language from audio samples (fallback for non-State contexts)
     fn detect_language_from_samples(_samples: &[f32]) -> Result<String, String> {
-        // In production, this would use Whisper's built-in language detection
-        // For now, return English as default
-        // TODO: Implement using whisper_rs::WhisperContext::lang_detect()
+        // Default to English if no context available
         Ok("en".to_string())
     }
 
@@ -428,7 +456,7 @@ impl SttEngine {
     /// Unload the model and free resources
     pub fn unload(&self) -> Result<(), String> {
         let mut handle = self
-            .engine_handle
+            .whisper_context
             .lock()
             .map_err(|e| format!("Failed to acquire lock: {}", e))?;
         *handle = None;
@@ -441,9 +469,11 @@ impl SttEngine {
 ///
 /// Checks if Whisper models are downloaded and the engine is ready.
 pub fn is_stt_available() -> bool {
-    // Check if we have at least one model file
-    if let Some(engine) = STT_ENGINE.lock().ok().and_then(|mut e| e.take()) {
-        return engine.is_loaded();
+    // Check if engine is initialized
+    if let Ok(engine_guard) = STT_ENGINE.lock() {
+        if let Some(engine) = engine_guard.as_ref() {
+            return engine.is_loaded();
+        }
     }
 
     // Check if any model files exist
@@ -499,10 +529,12 @@ pub fn detect_language(audio_data: &[u8]) -> Result<String, String> {
     let samples = extract_pcm_data(audio_data, &audio_params)?;
 
     // Get STT engine for language detection
-    let _engine = STT_ENGINE
+    let engine_guard = STT_ENGINE
         .lock()
-        .map_err(|e| format!("Failed to acquire STT lock: {}", e))?
-        .clone()
+        .map_err(|e| format!("Failed to acquire STT lock: {}", e))?;
+
+    let _engine = engine_guard
+        .as_ref()
         .ok_or_else(|| "STT engine not initialized".to_string())?;
 
     // Use engine to detect language
@@ -512,7 +544,7 @@ pub fn detect_language(audio_data: &[u8]) -> Result<String, String> {
 /// Parse WAV file header
 ///
 /// Returns audio parameters (sample rate, channels, bits per sample)
-fn parse_wav_header(data: &[u8]) -> Result<AudioParams, String> {
+pub fn parse_wav_header(data: &[u8]) -> Result<AudioParams, String> {
     if data.len() < 44 {
         return Err("Audio data too short for WAV header".to_string());
     }
@@ -580,7 +612,7 @@ fn parse_wav_header(data: &[u8]) -> Result<AudioParams, String> {
 /// Extract PCM data from WAV file
 ///
 /// Converts raw 16-bit PCM samples to f32 values normalized to [-1, 1]
-fn extract_pcm_data(data: &[u8], params: &AudioParams) -> Result<Vec<f32>, String> {
+pub fn extract_pcm_data(data: &[u8], params: &AudioParams) -> Result<Vec<f32>, String> {
     // Find data chunk
     let mut data_offset = 12; // Skip RIFF header
 
@@ -633,7 +665,7 @@ fn extract_pcm_data(data: &[u8], params: &AudioParams) -> Result<Vec<f32>, Strin
 ///
 /// Uses simple linear interpolation for resampling.
 /// In production, consider using a dedicated resampling library.
-fn resample_audio(samples: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
+pub fn resample_audio(samples: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
     if from_rate == to_rate {
         return samples.to_vec();
     }
@@ -698,9 +730,38 @@ pub fn apply_vad(samples: &[f32], sensitivity: f32) -> VadResult {
 /// Transcribe audio file directly from path
 #[tauri::command]
 pub fn transcribe_file(file_path: String, language: String) -> Result<TranscriptionResult, String> {
+    use std::path::Path;
+
+    // Validate path to prevent path traversal attacks
+    let path = Path::new(&file_path);
+
+    // Check for path traversal components
+    if path.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+        return Err("Invalid file path: path traversal not allowed".to_string());
+    }
+
+    // Resolve to canonical path to prevent symlink attacks
+    let canonical_path = path.canonicalize()
+        .map_err(|_| "Invalid file path".to_string())?;
+
+    // Only allow files from user-writable directories
+    let allowed_dirs = vec![
+        dirs::audio_dir(),
+        dirs::home_dir(),
+        dirs::document_dir(),
+    ].into_iter().flatten().filter_map(|p| p.canonicalize().ok()).collect::<Vec<_>>();
+
+    let is_allowed = allowed_dirs.iter().any(|dir| {
+        canonical_path.starts_with(dir)
+    });
+
+    if !is_allowed {
+        return Err("File path not in allowed directory".to_string());
+    }
+
     // Read file
-    let audio_data =
-        std::fs::read(&file_path).map_err(|e| format!("Failed to read audio file: {}", e))?;
+    let audio_data = std::fs::read(&canonical_path)
+        .map_err(|e| format!("Failed to read audio file: {}", e))?;
 
     // Delegate to regular transcribe function
     transcribe(audio_data, language)
@@ -709,6 +770,21 @@ pub fn transcribe_file(file_path: String, language: String) -> Result<Transcript
 /// Download Whisper model if not present
 #[tauri::command]
 pub async fn download_model(model_name: String) -> Result<String, String> {
+    // Validate model name first to prevent injection
+    let valid_models = [
+        "tiny", "base", "small", "medium", "large",
+        "tiny-en", "base-en", "small-en", "medium-en",
+        "large-v1", "large-v2", "large-v3",
+    ];
+
+    if !valid_models.contains(&model_name.as_str()) {
+        return Err(format!(
+            "Invalid model name '{}'. Valid options: {}",
+            model_name,
+            valid_models.join(", ")
+        ));
+    }
+
     let model_filename = format!("ggml-{}.bin", model_name);
 
     // Determine model directory
