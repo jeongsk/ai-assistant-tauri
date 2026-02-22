@@ -1,5 +1,7 @@
 // Plugin Loader - Loads and validates plugins
 
+#![allow(dead_code)]
+
 use crate::plugins::{PluginManifest, PluginPermission, ResourceLimits};
 use std::path::PathBuf;
 use std::collections::HashMap;

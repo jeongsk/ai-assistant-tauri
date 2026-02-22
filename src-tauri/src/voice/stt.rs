@@ -6,6 +6,8 @@
 // whisper-rs = "0.11"
 // dirs = "5"
 
+#![allow(dead_code)]
+
 use crate::voice::TranscriptionResult;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex, RwLock};

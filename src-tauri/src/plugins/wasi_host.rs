@@ -4,7 +4,6 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::Path;
 
 // WASM feature-gated imports
 #[cfg(feature = "wasm")]
@@ -12,6 +11,7 @@ use wasmtime_wasi::{WasiCtx, WasiCtxBuilder};
 
 /// WASI context for sandboxed execution
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct WasiContext {
     /// Preopened directories
     pub preopened_dirs: Vec<WasiDirectory>,
@@ -23,16 +23,6 @@ pub struct WasiContext {
     pub args: Vec<String>,
 }
 
-impl Default for WasiContext {
-    fn default() -> Self {
-        Self {
-            preopened_dirs: Vec::new(),
-            env_vars: HashMap::new(),
-            stdio: WasiStdio::default(),
-            args: Vec::new(),
-        }
-    }
-}
 
 impl WasiContext {
     /// Create a new WASI context
@@ -204,7 +194,7 @@ impl WasiHost {
     }
 
     /// Create a temporary context builder
-    pub fn create_context(&mut self, id: String) -> WasiContextBuilder {
+    pub fn create_context(&mut self, id: String) -> WasiContextBuilder<'_> {
         WasiContextBuilder {
             id,
             host: self,

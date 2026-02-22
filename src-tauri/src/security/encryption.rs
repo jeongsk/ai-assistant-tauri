@@ -1,5 +1,7 @@
 //! AES-256-GCM encryption for sensitive data
 
+#![allow(dead_code)]
+
 use crate::security::{Result, SecurityError};
 use aes_gcm::{
     aead::{Aead, AeadCore, KeyInit, OsRng},

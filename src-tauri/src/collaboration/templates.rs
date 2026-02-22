@@ -1,5 +1,7 @@
 // Template Management
 
+#![allow(dead_code)]
+
 use crate::collaboration::Template;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

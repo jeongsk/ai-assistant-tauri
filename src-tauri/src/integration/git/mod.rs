@@ -4,10 +4,6 @@
 
 pub mod operations;
 
-pub use operations::{
-    GitOperations, GitOperationResult, GitExtendedStatus,
-    git_clone, git_commit, git_push, git_pull, git_get_extended_status,
-};
 
 use serde::{Deserialize, Serialize};
 
@@ -96,7 +92,7 @@ pub fn get_git_status(path: String) -> Result<GitStatus, String> {
 
 /// Get current git commit (legacy command)
 #[tauri::command]
-pub fn get_git_current_commit(path: String) -> Result<String, String> {
+pub fn get_git_current_commit(_path: String) -> Result<String, String> {
     #[cfg(feature = "git")]
     {
         let ops = GitOperations::open(&path)?;

@@ -1,5 +1,7 @@
 // Plugin System Module
 
+#![allow(dead_code)]
+
 pub mod loader;
 pub mod sandbox;
 pub mod api;
@@ -9,8 +11,7 @@ pub mod wasi_host;
 pub mod monitor;
 
 pub use executor::{
-    ExecutionResult, PluginExecutor, PluginIpc, PluginMessage, ResourceUsage,
-    RunningPlugin, PluginInstanceState,
+    ExecutionResult, PluginExecutor, PluginMessage, ResourceUsage,
 };
 
 

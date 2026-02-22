@@ -2,6 +2,8 @@
 //!
 //! Actual S3 operations using aws-sdk-s3.
 
+#![allow(dead_code)]
+
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -418,7 +420,7 @@ impl Default for S3Manager {
 
 #[cfg(not(feature = "cloud"))]
 impl S3Manager {
-    pub async fn upload_file(&self, name: &str, key: &str, _data: Vec<u8>) -> S3OperationResult {
+    pub async fn upload_file(&self, _name: &str, _key: &str, _data: Vec<u8>) -> S3OperationResult {
         S3OperationResult {
             success: false,
             result: None,
@@ -427,7 +429,7 @@ impl S3Manager {
         }
     }
 
-    pub async fn download_file(&self, name: &str, key: &str) -> S3OperationResult {
+    pub async fn download_file(&self, _name: &str, _key: &str) -> S3OperationResult {
         S3OperationResult {
             success: false,
             result: None,
@@ -440,7 +442,7 @@ impl S3Manager {
         Err(format!("Cloud feature not enabled for '{}'", name))
     }
 
-    pub async fn delete_object(&self, name: &str, key: &str) -> S3OperationResult {
+    pub async fn delete_object(&self, _name: &str, _key: &str) -> S3OperationResult {
         S3OperationResult {
             success: false,
             result: None,

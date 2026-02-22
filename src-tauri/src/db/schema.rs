@@ -3,7 +3,7 @@
 use rusqlite::Connection;
 use rusqlite::Result;
 
-const _SCHEMA_VERSION: i32 = 5;
+const _SCHEMA_VERSION: i32 = 7;
 
 pub fn run_migrations(conn: &Connection) -> Result<()> {
     // Create migrations table if not exists
@@ -43,6 +43,14 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
 
     if current_version < 5 {
         migrate_v5(conn)?;
+    }
+
+    if current_version < 6 {
+        migrate_v6(conn)?;
+    }
+
+    if current_version < 7 {
+        migrate_v7(conn)?;
     }
 
     Ok(())
@@ -357,6 +365,99 @@ fn migrate_v5(conn: &Connection) -> Result<()> {
     )?;
 
     tracing::info!("Database migration v5 completed");
+
+    Ok(())
+}
+
+/// Migration v6: Add tables for template versioning and sharing
+///
+/// This migration:
+/// 1. Creates `template_versions` table for template version history
+/// 2. Creates `template_shares` table for team template sharing
+fn migrate_v6(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        r#"
+        -- Create template_versions table for version history
+        CREATE TABLE IF NOT EXISTS template_versions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            template_id TEXT NOT NULL,
+            version INTEGER NOT NULL,
+            content TEXT NOT NULL,
+            notes TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(template_id, version)
+        );
+
+        -- Create template_shares table for team sharing
+        CREATE TABLE IF NOT EXISTS template_shares (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            template_id TEXT NOT NULL,
+            team_id TEXT NOT NULL,
+            permissions TEXT NOT NULL,
+            shared_by TEXT NOT NULL,
+            shared_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(template_id, team_id)
+        );
+
+        -- Indexes
+        CREATE INDEX IF NOT EXISTS idx_template_versions_template_id ON template_versions(template_id);
+        CREATE INDEX IF NOT EXISTS idx_template_versions_version ON template_versions(version);
+        CREATE INDEX IF NOT EXISTS idx_template_shares_template_id ON template_shares(template_id);
+        CREATE INDEX IF NOT EXISTS idx_template_shares_team_id ON template_shares(team_id);
+
+        -- Record migration
+        INSERT INTO schema_migrations (version) VALUES (6);
+        "#,
+    )?;
+
+    tracing::info!("Database migration v6 completed");
+
+    Ok(())
+}
+
+/// Migration v7: Add tables for voice patterns and conversations
+///
+/// This migration:
+/// 1. Creates `voice_patterns` table for user-defined voice command patterns
+/// 2. Creates `voice_conversations` table for multi-turn voice conversation history
+fn migrate_v7(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        r#"
+        -- Create voice_patterns table for custom voice command patterns
+        CREATE TABLE IF NOT EXISTS voice_patterns (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            pattern TEXT NOT NULL,
+            action_type TEXT NOT NULL CHECK(action_type IN ('execute_skill', 'run_recipe', 'send_message', 'open_feature', 'search')),
+            target_id TEXT,
+            language TEXT NOT NULL DEFAULT 'en',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        -- Create voice_conversations table for multi-turn conversation history
+        CREATE TABLE IF NOT EXISTS voice_conversations (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
+            content TEXT NOT NULL,
+            language TEXT NOT NULL DEFAULT 'en',
+            audio_transcribed INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        -- Indexes
+        CREATE INDEX IF NOT EXISTS idx_voice_patterns_language ON voice_patterns(language);
+        CREATE INDEX IF NOT EXISTS idx_voice_patterns_action_type ON voice_patterns(action_type);
+        CREATE INDEX IF NOT EXISTS idx_voice_conversations_session_id ON voice_conversations(session_id);
+        CREATE INDEX IF NOT EXISTS idx_voice_conversations_created_at ON voice_conversations(created_at);
+
+        -- Record migration
+        INSERT INTO schema_migrations (version) VALUES (7);
+        "#,
+    )?;
+
+    tracing::info!("Database migration v7 completed");
 
     Ok(())
 }

@@ -1,4 +1,7 @@
 // Sidecar management and Agent communication
+
+#![allow(dead_code)]
+
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::io::{BufRead, BufReader, Write};
@@ -426,4 +429,162 @@ pub async fn execute_prompt(
         .unwrap_or("");
 
     Ok(result.to_string())
+}
+
+// ============================================================================
+// Voice Command Integration (v0.5)
+// ============================================================================
+
+/// Voice command execution result
+#[derive(Debug, Serialize, Deserialize)]
+pub struct VoiceCommandResult {
+    pub success: bool,
+    pub action: String,
+    pub result: Option<String>,
+    pub response_audio: Option<Vec<u8>>,  // TTS response
+    pub error: Option<String>,
+}
+
+/// Execute a voice command via agent runtime
+#[tauri::command]
+pub async fn execute_voice_command(
+    state: tauri::State<'_, Mutex<SidecarState>>,
+    transcript: String,
+    language: Option<String>,
+) -> Result<VoiceCommandResult, String> {
+    use crate::voice::{VoiceAction, ParsedVoiceCommand};
+    use crate::voice::commands::parse_voice_command;
+
+    // Parse the voice command
+    let parsed: ParsedVoiceCommand = parse_voice_command(transcript.clone(), language)?;
+
+    let action_type = match &parsed.action {
+        VoiceAction::ExecuteSkill { .. } => "execute_skill",
+        VoiceAction::RunRecipe { .. } => "run_recipe",
+        VoiceAction::SendMessage { .. } => "send_message",
+        VoiceAction::OpenFeature { .. } => "open_feature",
+        VoiceAction::Search { .. } => "search",
+        VoiceAction::Unknown => "unknown",
+    }.to_string();
+
+    // Execute based on action type
+    let result = match &parsed.action {
+        VoiceAction::ExecuteSkill { skill_name } => {
+            // Find skill ID by name (simplified - in production would query DB)
+            let skill_id = format!("skill-{}", skill_name.to_lowercase().replace(' ', "-"));
+            execute_skill(
+                state,
+                skill_id,
+                format!("Execute skill: {}", skill_name),
+                transcript.clone(),
+            ).await.map_err(|e| format!("Skill execution failed: {}", e))?
+        }
+        VoiceAction::RunRecipe { recipe_name } => {
+            // Find recipe ID by name (simplified)
+            let recipe_id = format!("recipe-{}", recipe_name.to_lowercase().replace(' ', "-"));
+            execute_recipe(
+                state,
+                recipe_id,
+                vec![],
+                None,
+            ).await.map_err(|e| format!("Recipe execution failed: {}", e))?
+        }
+        VoiceAction::SendMessage { content } => {
+            // Send as a chat message
+            agent_chat(
+                state,
+                vec![super::Message {
+                    role: "user".to_string(),
+                    content: content.clone(),
+                }],
+                None,
+            ).await.map(|r| r.content)?
+        }
+        VoiceAction::OpenFeature { feature } => {
+            format!("Opening feature: {}", feature)
+        }
+        VoiceAction::Search { query } => {
+            agent_chat(
+                state,
+                vec![super::Message {
+                    role: "user".to_string(),
+                    content: format!("Search for: {}", query),
+                }],
+                None,
+            ).await.map(|r| r.content)?
+        }
+        VoiceAction::Unknown => {
+            // Unknown command - treat as chat message
+            agent_chat(
+                state,
+                vec![super::Message {
+                    role: "user".to_string(),
+                    content: transcript.clone(),
+                }],
+                None,
+            ).await.map(|r| r.content)?
+        }
+    };
+
+    Ok(VoiceCommandResult {
+        success: true,
+        action: action_type,
+        result: Some(result),
+        response_audio: None,  // TTS would be generated here
+        error: None,
+    })
+}
+
+/// Start a voice conversation session (multi-turn)
+#[tauri::command]
+pub async fn start_voice_conversation(
+    _state: tauri::State<'_, Mutex<SidecarState>>,
+    language: String,
+) -> Result<String, String> {
+    // Initialize a conversation session
+    let session_id = uuid::Uuid::new_v4().to_string();
+
+    // In production, this would store the session in a database
+    tracing::info!("Started voice conversation session: {} (language: {})", session_id, language);
+
+    Ok(session_id)
+}
+
+/// Continue a voice conversation (multi-turn)
+#[tauri::command]
+pub async fn continue_voice_conversation(
+    state: tauri::State<'_, Mutex<SidecarState>>,
+    session_id: String,
+    transcript: String,
+) -> Result<VoiceCommandResult, String> {
+    // In production, this would load conversation history from the database
+    tracing::info!("Continuing voice conversation: {}", session_id);
+
+    // For now, treat as a chat message with conversation context
+    let response = agent_chat(
+        state,
+        vec![super::Message {
+            role: "user".to_string(),
+            content: transcript.clone(),
+        }],
+        None,
+    ).await?;
+
+    Ok(VoiceCommandResult {
+        success: true,
+        action: "conversation".to_string(),
+        result: Some(response.content),
+        response_audio: None,
+        error: response.error,
+    })
+}
+
+/// End a voice conversation session
+#[tauri::command]
+pub async fn end_voice_conversation(
+    _session_id: String,
+) -> Result<(), String> {
+    // In production, this would save the conversation history
+    tracing::info!("Ended voice conversation session: {}", _session_id);
+    Ok(())
 }

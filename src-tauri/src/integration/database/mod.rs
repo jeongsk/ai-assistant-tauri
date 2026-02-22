@@ -4,7 +4,7 @@
 
 pub mod pool;
 
-pub use pool::{DatabasePoolManager, QueryResult, SchemaInfo, ColumnInfo};
+pub use pool::{DatabasePoolManager, QueryResult, SchemaInfo};
 
 use serde::{Deserialize, Serialize};
 
@@ -76,7 +76,7 @@ impl DatabaseConnectionConfig {
 /// Execute a SQL query and return results
 #[tauri::command]
 pub async fn database_execute_query(
-    pool_manager: tauri::State<'_, tokio::sync::Mutex<DatabasePoolManager>>,
+    _pool_manager: tauri::State<'_, tokio::sync::Mutex<DatabasePoolManager>>,
     name: String,
     query: String,
 ) -> std::result::Result<QueryResult, String> {

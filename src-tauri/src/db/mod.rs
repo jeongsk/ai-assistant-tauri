@@ -1797,3 +1797,297 @@ pub fn delete_git_repository(db: tauri::State<'_, DbState>, id: String) -> Resul
     Ok(())
 }
 
+// ============================================================================
+// DB Trait - Internal database operations for template_commands
+// ============================================================================
+
+#[allow(dead_code)]
+/// Internal database operations trait
+pub trait DB {
+    fn list_templates(&self) -> Result<Vec<Template>, String>;
+    fn get_template(&self, id: &str) -> Option<Template>;
+    fn create_template(&self, template: &Template) -> Result<(), String>;
+    fn get_template_versions(&self, id: &str) -> Result<Vec<crate::collaboration::template_commands::TemplateVersion>, String>;
+    fn create_template_version(&self, template: &Template, notes: &str) -> Result<i64, String>;
+    fn rollback_template_version(&self, id: &str, version_id: i64) -> Result<(), String>;
+    fn share_template_to_team(&self, id: &str, team_id: &str, permissions: &str) -> Result<(), String>;
+    fn get_team_templates(&self, team_id: &str) -> Result<Vec<Template>, String>;
+    fn revoke_template_access(&self, id: &str, team_id: &str) -> Result<(), String>;
+}
+
+/// Implement DB trait for DbState
+impl DB for DbState {
+    fn list_templates(&self) -> Result<Vec<Template>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, name, category, content, visibility, version, created_at, updated_at
+                 FROM templates ORDER BY category, name",
+            )
+            .map_err(|e| e.to_string())?;
+
+        let templates = stmt
+            .query_map([], |row| {
+                Ok(Template {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    category: row.get(2)?,
+                    content: row.get(3)?,
+                    visibility: row.get(4)?,
+                    version: row.get(5)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
+                })
+            })
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+
+        Ok(templates)
+    }
+
+    fn get_template(&self, id: &str) -> Option<Template> {
+        let conn = self.conn.lock().ok()?;
+
+        conn.query_row(
+            "SELECT id, name, category, content, visibility, version, created_at, updated_at
+             FROM templates WHERE id = ?1",
+            [id],
+            |row| {
+                Ok(Template {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    category: row.get(2)?,
+                    content: row.get(3)?,
+                    visibility: row.get(4)?,
+                    version: row.get(5)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
+                })
+            },
+        )
+        .ok()
+    }
+
+    fn create_template(&self, template: &Template) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+
+        conn.execute(
+            "INSERT INTO templates (id, name, category, content, visibility, version, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                 ON CONFLICT(id) DO UPDATE SET
+                 name = ?2, category = ?3, content = ?4, visibility = ?5, updated_at = ?8",
+            [
+                &template.id,
+                &template.name,
+                &template.category,
+                &template.content,
+                &template.visibility,
+                &template.version,
+                &template.created_at,
+                &template.updated_at,
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+
+        Ok(())
+    }
+
+    fn get_template_versions(&self, id: &str) -> Result<Vec<crate::collaboration::template_commands::TemplateVersion>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+
+        // Check if table exists (for backward compatibility)
+        let table_exists: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='template_versions'",
+                [],
+                |row| Ok(row.get::<_, i32>(0)? > 0),
+            )
+            .unwrap_or(false);
+
+        if !table_exists {
+            return Ok(vec![]);
+        }
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, template_id, version, content, notes, created_at
+                 FROM template_versions
+                 WHERE template_id = ?1
+                 ORDER BY version DESC",
+            )
+            .map_err(|e| e.to_string())?;
+
+        let versions = stmt
+            .query_map([id], |row| {
+                Ok(crate::collaboration::template_commands::TemplateVersion {
+                    id: row.get(0)?,
+                    template_id: row.get(1)?,
+                    version: row.get(2)?,
+                    content: row.get(3)?,
+                    notes: row.get(4)?,
+                    created_at: row.get(5)?,
+                })
+            })
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+
+        Ok(versions)
+    }
+
+    fn create_template_version(&self, template: &Template, notes: &str) -> Result<i64, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+
+        // Ensure table exists
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS template_versions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                template_id TEXT NOT NULL,
+                version INTEGER NOT NULL,
+                content TEXT NOT NULL,
+                notes TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(template_id, version)
+            )",
+            [],
+        )
+        .map_err(|e| format!("Failed to create template_versions table: {}", e))?;
+
+        // Get next version number
+        let version: i32 = conn
+            .query_row(
+                "SELECT COALESCE(MAX(version), 0) + 1 FROM template_versions WHERE template_id = ?1",
+                [&template.id],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+
+        // Serialize template
+        let content = serde_json::to_string(template)
+            .map_err(|e| format!("Failed to serialize template: {}", e))?;
+
+        let now = chrono::Utc::now().to_rfc3339();
+
+        conn.execute(
+            "INSERT INTO template_versions (template_id, version, content, notes, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+            [&template.id, &version.to_string(), &content, notes, &now],
+        )
+        .map_err(|e| e.to_string())?;
+
+        Ok(conn.last_insert_rowid())
+    }
+
+    fn rollback_template_version(&self, _id: &str, version_id: i64) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+
+        // Get version content
+        let (_template_id, content): (String, String) = conn
+            .query_row(
+                "SELECT template_id, content FROM template_versions WHERE id = ?1",
+                [version_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(|e| format!("Version not found: {}", e))?;
+
+        // Parse template
+        let template: Template = serde_json::from_str(&content)
+            .map_err(|e| format!("Failed to parse template: {}", e))?;
+
+        // Update main template
+        self.create_template(&template)?;
+
+        Ok(())
+    }
+
+    fn share_template_to_team(&self, id: &str, team_id: &str, permissions: &str) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+
+        // Ensure table exists
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS template_shares (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                template_id TEXT NOT NULL,
+                team_id TEXT NOT NULL,
+                permissions TEXT NOT NULL,
+                shared_by TEXT NOT NULL,
+                shared_at TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(template_id, team_id)
+            )",
+            [],
+        )
+        .map_err(|e| format!("Failed to create template_shares table: {}", e))?;
+
+        let now = chrono::Utc::now().to_rfc3339();
+
+        conn.execute(
+            "INSERT OR REPLACE INTO template_shares (template_id, team_id, permissions, shared_by, shared_at)
+                 VALUES (?1, ?2, ?3, 'system', ?4)",
+            [id, team_id, permissions, &now],
+        )
+        .map_err(|e| e.to_string())?;
+
+        Ok(())
+    }
+
+    fn get_team_templates(&self, team_id: &str) -> Result<Vec<Template>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+
+        // Ensure table exists
+        let table_exists: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='template_shares'",
+                [],
+                |row| Ok(row.get::<_, i32>(0)? > 0),
+            )
+            .unwrap_or(false);
+
+        if !table_exists {
+            return Ok(vec![]);
+        }
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT t.id, t.name, t.category, t.content, t.visibility, t.version, t.created_at, t.updated_at
+                 FROM templates t
+                 INNER JOIN template_shares s ON t.id = s.template_id
+                 WHERE s.team_id = ?1
+                 ORDER BY t.name",
+            )
+            .map_err(|e| e.to_string())?;
+
+        let templates = stmt
+            .query_map([team_id], |row| {
+                Ok(Template {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    category: row.get(2)?,
+                    content: row.get(3)?,
+                    visibility: row.get(4)?,
+                    version: row.get(5)?,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
+                })
+            })
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+
+        Ok(templates)
+    }
+
+    fn revoke_template_access(&self, id: &str, team_id: &str) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+
+        conn.execute(
+            "DELETE FROM template_shares WHERE template_id = ?1 AND team_id = ?2",
+            [id, team_id],
+        )
+        .map_err(|e| e.to_string())?;
+
+        Ok(())
+    }
+}
+

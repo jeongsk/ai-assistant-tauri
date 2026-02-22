@@ -1,5 +1,7 @@
 //! Job scheduler - periodically checks and executes due jobs
 
+#![allow(dead_code)]
+
 use super::cron::CronExpression;
 use super::runner::{ExecutionContext, JobExecutor, ScheduledJob};
 use chrono::Utc;

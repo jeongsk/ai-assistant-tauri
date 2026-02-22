@@ -197,7 +197,7 @@ impl ResourceMonitor {
         let total_fuel = history.iter().map(|m| m.fuel_consumed).sum();
 
         #[cfg(not(feature = "wasm"))]
-        let total_fuel = 0;
+        let _total_fuel = 0;
 
         Some(ResourceSummary {
             instance_id: instance_id.to_string(),
@@ -232,7 +232,7 @@ impl ResourceMonitor {
         let total_fuel: u64 = self.metrics.iter().map(|m| m.fuel_consumed).sum();
 
         #[cfg(not(feature = "wasm"))]
-        let total_fuel = 0;
+        let _total_fuel = 0;
 
         TotalResourceUsage {
             instance_count: self.metrics.len(),

@@ -111,16 +111,14 @@ fn list_directory(path: &str) -> Result<Vec<String>, String> {
         .map_err(|e| format!("Failed to read directory: {}", e))?;
     
     let mut result = Vec::new();
-    for entry in entries {
-        if let Ok(entry) = entry {
-            if let Ok(name) = entry.file_name().into_string() {
-                let file_type = if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                    "dir"
-                } else {
-                    "file"
-                };
-                result.push(format!("{}:{}", name, file_type));
-            }
+    for entry in entries.flatten() {
+        if let Ok(name) = entry.file_name().into_string() {
+            let file_type = if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                "dir"
+            } else {
+                "file"
+            };
+            result.push(format!("{}:{}", name, file_type));
         }
     }
     
@@ -440,6 +438,20 @@ pub fn run() {
             db::update_template,
             db::delete_template,
             db::search_templates,
+            // Template import/export commands (v0.5)
+            collaboration::template_commands::export_template,
+            collaboration::template_commands::export_all_templates,
+            collaboration::template_commands::import_template,
+            collaboration::template_commands::import_templates,
+            collaboration::template_commands::validate_template_data,
+            // Template versioning commands (v0.5)
+            collaboration::template_commands::get_template_versions,
+            collaboration::template_commands::create_template_version,
+            collaboration::template_commands::rollback_template,
+            // Template sharing commands (v0.5)
+            collaboration::template_commands::share_template_to_team,
+            collaboration::template_commands::get_team_templates,
+            collaboration::template_commands::revoke_template_access,
             // Voice settings commands (v0.4)
             db::get_voice_settings,
             db::update_voice_settings,
@@ -450,6 +462,16 @@ pub fn run() {
             voice::tts::init_tts,
             voice::tts::synthesize,
             voice::tts::get_available_voices,
+            // Voice command parsing (v0.5)
+            voice::commands::parse_voice_command,
+            voice::commands::detect_voice_language,
+            voice::commands::validate_voice_command,
+            voice::commands::get_voice_command_patterns,
+            // Voice conversation commands (v0.5)
+            sidecar::execute_voice_command,
+            sidecar::start_voice_conversation,
+            sidecar::continue_voice_conversation,
+            sidecar::end_voice_conversation,
             // Integration commands (v0.4)
             integration::test_database_connection,
             integration::get_database_connection_string,

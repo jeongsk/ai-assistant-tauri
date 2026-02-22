@@ -2,6 +2,8 @@
 //!
 //! This module provides a client for the template marketplace.
 
+#![allow(dead_code)]
+
 use crate::collaboration::Template;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -74,7 +76,7 @@ impl MarketplaceClient {
     }
 
     /// Upload a template to marketplace
-    pub async fn upload_template(&self, template: &Template) -> Result<String, String> {
+    pub async fn upload_template(&self, _template: &Template) -> Result<String, String> {
         // In production, this would POST to the marketplace
         // For now, return a mock template ID
         Ok(format!("mp-{}", uuid::Uuid::new_v4()))
@@ -93,7 +95,7 @@ impl MarketplaceClient {
             .into_iter()
             .filter(|t| {
                 let name_matches = t.name.to_lowercase().contains(&query.to_lowercase());
-                let category_matches = category.map_or(true, |c| t.category == c);
+                let category_matches = category.is_none_or(|c| t.category == c);
                 let tags_matches = tags.is_empty() || t.tags.iter().any(|tag| tags.contains(&tag.as_str()));
                 name_matches && category_matches && tags_matches
             })
@@ -128,6 +130,7 @@ pub struct MarketplaceTemplate {
 
 /// Marketplace search filters
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct MarketplaceSearchFilters {
     pub category: Option<String>,
     pub min_rating: Option<f32>,
@@ -135,16 +138,6 @@ pub struct MarketplaceSearchFilters {
     pub author: Option<String>,
 }
 
-impl Default for MarketplaceSearchFilters {
-    fn default() -> Self {
-        Self {
-            category: None,
-            min_rating: None,
-            tags: Vec::new(),
-            author: None,
-        }
-    }
-}
 
 /// Marketplace upload options
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -198,7 +191,7 @@ impl MarketplaceCache {
     }
 
     pub fn is_stale(&self, max_age_seconds: i64) -> bool {
-        self.last_updated.map_or(true, |t| {
+        self.last_updated.is_none_or(|t| {
             chrono::Utc::now() - t > chrono::Duration::seconds(max_age_seconds)
         })
     }

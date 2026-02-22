@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod tests {
     use super::super::*;
-    use crate::marketplace::{MarketplaceItem, MarketplaceItemType, MarketplacePrice, MarketplaceFilters};
+    use crate::marketplace::{MarketplaceItem, MarketplaceItemType, MarketplacePrice, MarketplaceFilters, MarketplaceListing};
 
     #[tokio::test]
     async fn test_store_list_items() {

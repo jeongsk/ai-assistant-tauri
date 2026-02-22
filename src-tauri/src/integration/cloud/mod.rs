@@ -4,7 +4,6 @@
 
 pub mod s3;
 
-pub use s3::{S3Manager, S3OperationResult, S3Object};
 
 use serde::{Deserialize, Serialize};
 
@@ -36,10 +35,10 @@ impl CloudStorageConfig {
         }
         match self.provider {
             CloudProvider::AwsS3 => {
-                if self.access_key_id.as_ref().map_or(true, |s| s.is_empty()) {
+                if self.access_key_id.as_ref().is_none_or(|s| s.is_empty()) {
                     return Err("Access key ID is required for S3".to_string());
                 }
-                if self.secret_access_key.as_ref().map_or(true, |s| s.is_empty()) {
+                if self.secret_access_key.as_ref().is_none_or(|s| s.is_empty()) {
                     return Err("Secret access key is required for S3".to_string());
                 }
             }
@@ -47,7 +46,7 @@ impl CloudStorageConfig {
                 // GCS uses different credentials
             }
             CloudProvider::AzureBlob => {
-                if self.access_key_id.as_ref().map_or(true, |s| s.is_empty()) {
+                if self.access_key_id.as_ref().is_none_or(|s| s.is_empty()) {
                     return Err("Account name is required for Azure Blob".to_string());
                 }
             }
@@ -113,7 +112,7 @@ pub struct CloudObject {
 #[tauri::command]
 pub fn list_cloud_objects(
     config: CloudStorageConfig,
-    prefix: Option<String>,
+    _prefix: Option<String>,
 ) -> Result<Vec<CloudObject>, String> {
     config.validate()?;
     // Placeholder - would list actual objects in production

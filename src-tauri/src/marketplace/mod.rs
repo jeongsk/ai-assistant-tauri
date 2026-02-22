@@ -1,5 +1,7 @@
 // Marketplace Module - Skill/Recipe/Plugin marketplace
 
+#![allow(dead_code)]
+
 pub mod store;
 pub mod listing;
 pub mod install;
@@ -65,6 +67,7 @@ pub struct MarketplaceCategory {
 
 /// Marketplace search filters
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct MarketplaceFilters {
     pub item_type: Option<MarketplaceItemType>,
     pub category: Option<String>,
@@ -74,15 +77,3 @@ pub struct MarketplaceFilters {
     pub author: Option<String>,
 }
 
-impl Default for MarketplaceFilters {
-    fn default() -> Self {
-        Self {
-            item_type: None,
-            category: None,
-            price_free_only: false,
-            min_rating: None,
-            tags: Vec::new(),
-            author: None,
-        }
-    }
-}

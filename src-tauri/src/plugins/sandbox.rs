@@ -91,11 +91,10 @@ impl PluginSandbox {
         for perm in &self.context.permissions {
             if let PluginPermission::FileSystem { paths, access: perm_access } = perm {
                 for allowed_path in paths {
-                    if path.starts_with(allowed_path) {
-                        if access == "read" || perm_access == "readwrite" {
+                    if path.starts_with(allowed_path)
+                        && (access == "read" || perm_access == "readwrite") {
                             return Ok(());
                         }
-                    }
                 }
             }
         }

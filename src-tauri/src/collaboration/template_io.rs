@@ -58,7 +58,7 @@ pub fn import_templates_from_json(
         .map_err(|e| format!("Failed to parse JSON: {}", e))?;
 
     let mut imported = Vec::new();
-    let mut skipped = 0;
+    let skipped = 0;
     let mut errors = Vec::new();
 
     for template in export_data.templates {

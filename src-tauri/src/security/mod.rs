@@ -3,15 +3,15 @@
 //! This module provides secure credential storage using platform keychains
 //! and AES-256-GCM encryption for sensitive data.
 
+#![allow(dead_code)]
+
 pub mod credentials;
 pub mod encryption;
 pub mod migration;
 
 pub use credentials::CredentialManager;
-pub use encryption::{decrypt_data, encrypt_data, EncryptedData};
 pub use migration::migrate_plaintext_passwords;
 
-use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 
 /// Security error types

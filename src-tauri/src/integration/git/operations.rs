@@ -2,8 +2,9 @@
 //!
 //! Actual Git operations using git2-rs.
 
+#![allow(dead_code)]
+
 use serde::{Deserialize, Serialize};
-use std::path::Path;
 
 /// Git operations result
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -339,8 +340,8 @@ impl GitOperations {
 /// Clone a repository
 #[tauri::command]
 pub fn git_clone(
-    url: String,
-    path: String,
+    _url: String,
+    _path: String,
 ) -> std::result::Result<GitOperationResult, String> {
     #[cfg(feature = "git")]
     {
@@ -361,8 +362,8 @@ pub fn git_clone(
 /// Commit changes
 #[tauri::command]
 pub fn git_commit(
-    path: String,
-    message: String,
+    _path: String,
+    _message: String,
 ) -> std::result::Result<GitOperationResult, String> {
     #[cfg(feature = "git")]
     {
@@ -384,9 +385,9 @@ pub fn git_commit(
 /// Push changes
 #[tauri::command]
 pub fn git_push(
-    path: String,
-    remote: String,
-    branch: String,
+    _path: String,
+    _remote: String,
+    _branch: String,
 ) -> std::result::Result<GitOperationResult, String> {
     #[cfg(feature = "git")]
     {
@@ -408,9 +409,9 @@ pub fn git_push(
 /// Pull changes
 #[tauri::command]
 pub fn git_pull(
-    path: String,
-    remote: String,
-    branch: String,
+    _path: String,
+    _remote: String,
+    _branch: String,
 ) -> std::result::Result<GitOperationResult, String> {
     #[cfg(feature = "git")]
     {
@@ -432,7 +433,7 @@ pub fn git_pull(
 /// Get extended status
 #[tauri::command]
 pub fn git_get_extended_status(
-    path: String,
+    _path: String,
 ) -> std::result::Result<GitExtendedStatus, String> {
     #[cfg(feature = "git")]
     {

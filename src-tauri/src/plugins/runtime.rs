@@ -298,7 +298,7 @@ impl WasmRuntime {
         _wasi_ctx: Option<()>,
     ) -> Result<String, String> {
         // Find module
-        let module = self.modules
+        let _module = self.modules
             .get(module_hash)
             .ok_or_else(|| format!("Module not found: {}", module_hash))?;
 

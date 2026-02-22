@@ -1,5 +1,7 @@
 // Integration Module - External service integrations
 
+#![allow(dead_code)]
+
 pub mod database;
 pub mod git;
 pub mod cloud;

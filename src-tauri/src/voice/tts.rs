@@ -5,6 +5,8 @@
 // - macOS: say command
 // - Linux: espeak-ng or espeak
 
+#![allow(dead_code)]
+
 use crate::voice::SynthesisResult;
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
@@ -273,7 +275,7 @@ fn generate_silent_wav(sample_rate: u32, duration_ms: u64) -> Result<Vec<u8>, St
     let data_size = num_samples * 2; // 16-bit samples
     let file_size = 36 + data_size;
 
-    let mut wav = Vec::with_capacity(file_size as usize + 8);
+    let mut wav = Vec::with_capacity(file_size + 8);
 
     // RIFF header
     wav.extend_from_slice(b"RIFF");
@@ -285,8 +287,8 @@ fn generate_silent_wav(sample_rate: u32, duration_ms: u64) -> Result<Vec<u8>, St
     wav.extend_from_slice(&16u32.to_le_bytes()); // chunk size
     wav.extend_from_slice(&1u16.to_le_bytes()); // audio format (PCM)
     wav.extend_from_slice(&1u16.to_le_bytes()); // channels (mono)
-    wav.extend_from_slice(&(sample_rate as u32).to_le_bytes()); // sample rate
-    wav.extend_from_slice(&((sample_rate as u32 * 2) as u32).to_le_bytes()); // byte rate
+    wav.extend_from_slice(&sample_rate.to_le_bytes()); // sample rate
+    wav.extend_from_slice(&((sample_rate * 2)).to_le_bytes()); // byte rate
     wav.extend_from_slice(&2u16.to_le_bytes()); // block align
     wav.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
 
@@ -359,8 +361,8 @@ fn convert_aiff_to_wav(aiff_data: &[u8], sample_rate: u32) -> Result<Vec<u8>, St
     wav.extend_from_slice(&16u32.to_le_bytes());
     wav.extend_from_slice(&1u16.to_le_bytes()); // PCM
     wav.extend_from_slice(&1u16.to_le_bytes()); // mono
-    wav.extend_from_slice(&(sample_rate as u32).to_le_bytes());
-    wav.extend_from_slice(&((sample_rate as u32 * 2) as u32).to_le_bytes()); // byte rate
+    wav.extend_from_slice(&sample_rate.to_le_bytes());
+    wav.extend_from_slice(&((sample_rate * 2)).to_le_bytes()); // byte rate
     wav.extend_from_slice(&2u16.to_le_bytes()); // block align
     wav.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
 
@@ -422,7 +424,7 @@ pub fn is_tts_available() -> bool {
     #[cfg(target_os = "linux")]
     {
         // On Linux, check for espeak-ng or espeak
-        return std::process::Command::new("espeak-ng")
+        std::process::Command::new("espeak-ng")
             .arg("--version")
             .output()
             .map(|o| o.status.success())
@@ -431,7 +433,7 @@ pub fn is_tts_available() -> bool {
             .arg("--version")
             .output()
             .map(|o| o.status.success())
-            .unwrap_or(false);
+            .unwrap_or(false)
     }
 
     #[cfg(target_os = "macos")]

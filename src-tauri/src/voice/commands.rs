@@ -2,6 +2,8 @@
 //!
 //! This module provides voice command parsing and natural language routing.
 
+#![allow(dead_code)]
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -139,23 +141,23 @@ impl VoiceCommandParser {
             if let Some(captures) = self.match_pattern(&pattern.pattern, &transcript_lower) {
                 let action = match &pattern.action {
                     VoiceAction::ExecuteSkill { .. } => {
-                        let skill_name = captures.get(0).map(|s| s.to_string()).unwrap_or_default();
+                        let skill_name = captures.first().map(|s| s.to_string()).unwrap_or_default();
                         VoiceAction::ExecuteSkill { skill_name }
                     }
                     VoiceAction::RunRecipe { .. } => {
-                        let recipe_name = captures.get(0).map(|s| s.to_string()).unwrap_or_default();
+                        let recipe_name = captures.first().map(|s| s.to_string()).unwrap_or_default();
                         VoiceAction::RunRecipe { recipe_name }
                     }
                     VoiceAction::SendMessage { .. } => {
-                        let content = captures.get(0).map(|s| s.to_string()).unwrap_or_default();
+                        let content = captures.first().map(|s| s.to_string()).unwrap_or_default();
                         VoiceAction::SendMessage { content }
                     }
                     VoiceAction::OpenFeature { .. } => {
-                        let feature = captures.get(0).map(|s| s.to_string()).unwrap_or_default();
+                        let feature = captures.first().map(|s| s.to_string()).unwrap_or_default();
                         VoiceAction::OpenFeature { feature }
                     }
                     VoiceAction::Search { .. } => {
-                        let query = captures.get(0).map(|s| s.to_string()).unwrap_or_default();
+                        let query = captures.first().map(|s| s.to_string()).unwrap_or_default();
                         VoiceAction::Search { query }
                     }
                     _ => VoiceAction::Unknown,
@@ -439,7 +441,7 @@ impl VoiceConversationManager {
     /// Detect language from transcript (simplified)
     pub fn detect_language(&self, transcript: &str) -> String {
         // Simple heuristic: Korean characters detection
-        if transcript.chars().any(|c| is_hangul(c)) {
+        if transcript.chars().any(is_hangul) {
             "ko".to_string()
         } else {
             "en".to_string()
@@ -482,6 +484,121 @@ fn is_hangul(c: char) -> bool {
         '\u{3131}'..='\u{318E}' => true,  // Hangul compatibility Jamo
         _ => false,
     }
+}
+
+// ============================================================================
+// Tauri Commands - Voice Command Parsing (v0.5)
+// ============================================================================
+
+use crate::voice::ParsedVoiceCommand;
+
+/// Parse voice command transcript
+#[tauri::command]
+pub fn parse_voice_command(
+    transcript: String,
+    language: Option<String>,
+) -> Result<ParsedVoiceCommand, String> {
+    let parser = VoiceCommandParser::new();
+    let lang = language.unwrap_or_else(|| {
+        // Auto-detect language
+        if transcript.chars().any(is_hangul) {
+            "ko".to_string()
+        } else {
+            "en".to_string()
+        }
+    });
+
+    let command = parser.parse(&transcript, &lang);
+
+    // Convert VoiceAction to serializable format (use mod.rs VoiceAction)
+    use crate::voice::VoiceAction as ModVoiceAction;
+    let action = match &command.action {
+        VoiceAction::ExecuteSkill { skill_name } => ModVoiceAction::ExecuteSkill {
+            skill_name: skill_name.clone(),
+        },
+        VoiceAction::RunRecipe { recipe_name } => ModVoiceAction::RunRecipe {
+            recipe_name: recipe_name.clone(),
+        },
+        VoiceAction::SendMessage { content } => ModVoiceAction::SendMessage {
+            content: content.clone(),
+        },
+        VoiceAction::OpenFeature { feature } => ModVoiceAction::OpenFeature {
+            feature: feature.clone(),
+        },
+        VoiceAction::Search { query } => ModVoiceAction::Search {
+            query: query.clone(),
+        },
+        VoiceAction::Unknown => ModVoiceAction::Unknown,
+    };
+
+    Ok(ParsedVoiceCommand {
+        transcript: command.transcript,
+        language: command.language,
+        action,
+        parameters: command.parameters,
+        confidence: command.confidence,
+    })
+}
+
+/// Detect language from transcript
+#[tauri::command]
+pub fn detect_voice_language(transcript: String) -> String {
+    if transcript.chars().any(is_hangul) {
+        "ko".to_string()
+    } else {
+        "en".to_string()
+    }
+}
+
+/// Validate voice command format
+#[tauri::command]
+pub fn validate_voice_command(transcript: String) -> Result<bool, String> {
+    if transcript.trim().is_empty() {
+        return Ok(false);
+    }
+
+    // Check if transcript contains valid alphanumeric characters and common punctuation
+    for c in transcript.chars() {
+        if !(c.is_alphabetic() || c.is_whitespace() || c.is_ascii_punctuation() || c.is_numeric()) {
+            return Ok(false);
+        }
+    }
+
+    Ok(true)
+}
+
+/// Get supported voice command patterns
+#[tauri::command]
+pub fn get_voice_command_patterns(language: String) -> Vec<VoiceCommandPattern> {
+    let parser = VoiceCommandParser::new();
+
+    // Extract patterns from parser
+    let patterns = parser.language_patterns.get(&language).unwrap_or(&parser.patterns);
+
+    patterns.iter().map(|p| {
+        let action_type = match &p.action {
+            VoiceAction::ExecuteSkill { .. } => "execute_skill",
+            VoiceAction::RunRecipe { .. } => "run_recipe",
+            VoiceAction::SendMessage { .. } => "send_message",
+            VoiceAction::OpenFeature { .. } => "open_feature",
+            VoiceAction::Search { .. } => "search",
+            VoiceAction::Unknown => "unknown",
+        }.to_string();
+
+        VoiceCommandPattern {
+            pattern: p.pattern.clone(),
+            action_type,
+            param_names: p.param_names.clone(),
+        }
+    }).collect()
+}
+
+/// Voice command pattern description
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct VoiceCommandPattern {
+    pub pattern: String,
+    pub action_type: String,
+    pub param_names: Vec<String>,
 }
 
 #[cfg(test)]

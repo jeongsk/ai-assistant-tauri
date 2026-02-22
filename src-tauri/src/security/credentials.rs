@@ -1,5 +1,7 @@
 //! Platform keychain credential storage
 
+#![allow(dead_code)]
+
 use crate::security::{Result, SecurityError};
 use keyring::{Entry, Error as KeyringError};
 

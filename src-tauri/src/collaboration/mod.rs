@@ -1,8 +1,11 @@
 // Collaboration Module
 
+#![allow(dead_code)]
+
 pub mod templates;
 pub mod export_mod;
 pub mod template_io;
+pub mod template_commands;
 pub mod marketplace;
 
 use serde::{Deserialize, Serialize};

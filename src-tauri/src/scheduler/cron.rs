@@ -1,5 +1,7 @@
 //! Cron parsing and scheduling
 
+#![allow(dead_code)]
+
 use chrono::{DateTime, Utc, Datelike, Timelike};
 
 /// Cron expression parser
@@ -88,17 +90,17 @@ impl CronExpression {
             if self.matches(&current) {
                 return Some(current);
             }
-            current = current + chrono::Duration::minutes(1);
+            current += chrono::Duration::minutes(1);
         }
 
         None
     }
 
     fn matches(&self, dt: &DateTime<Utc>) -> bool {
-        self.minute.matches(dt.minute() as u32) &&
-        self.hour.matches(dt.hour() as u32) &&
-        self.day_of_month.matches(dt.day() as u32) &&
-        self.month.matches(dt.month() as u32) &&
+        self.minute.matches(dt.minute()) &&
+        self.hour.matches(dt.hour()) &&
+        self.day_of_month.matches(dt.day()) &&
+        self.month.matches(dt.month()) &&
         self.day_of_week.matches(dt.weekday().num_days_from_sunday())
     }
 }
@@ -110,7 +112,7 @@ impl CronField {
             CronField::Exact(v) => *v == value,
             CronField::List(v) => v.contains(&value),
             CronField::Range(start, end) => value >= *start && value <= *end,
-            CronField::Step(start, step) => value >= *start && (value - start) % step == 0,
+            CronField::Step(start, step) => value >= *start && (value - start).is_multiple_of(*step),
         }
     }
 }

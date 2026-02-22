@@ -3,10 +3,10 @@
 //! This module provides the actual execution engine for plugins using Wasmtime.
 
 use crate::plugins::{
-    api::{handle_request, PluginRequest, PluginResponse},
-    sandbox::{PluginSandbox, SandboxAction, SandboxManager},
-    runtime::{WasmRuntime, WasmExecutionResult, WasmRuntimeConfig},
-    wasi_host::{WasiHost, create_wasi_context_with_dir},
+    api::{handle_request, PluginRequest},
+    sandbox::{PluginSandbox, SandboxManager},
+    runtime::{WasmRuntime, WasmRuntimeConfig},
+    wasi_host::WasiHost,
     monitor::{ResourceMonitor, MetricUpdate},
     PluginContext, PluginManifest, PluginPermission, ResourceLimits,
 };
@@ -14,7 +14,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 /// Plugin execution result
 #[derive(Debug, Clone, serde::Serialize)]
@@ -173,7 +173,7 @@ impl PluginExecutor {
         };
 
         #[cfg(not(feature = "wasm"))]
-        let wasm_instance_id: Option<String> = None;
+        let _wasm_instance_id: Option<String> = None;
 
         // Create running instance
         let running = RunningPlugin {
@@ -202,7 +202,7 @@ impl PluginExecutor {
         }
 
         // Remove from running plugins
-        let plugin = plugins.remove(id)
+        let _plugin = plugins.remove(id)
             .ok_or_else(|| format!("Plugin {} not found", id))?;
 
         // Stop monitoring
@@ -259,7 +259,7 @@ impl PluginExecutor {
         // Check if plugin is running
         let is_running = {
             let plugins = self.running_plugins.lock().unwrap();
-            plugins.get(plugin_id).map_or(false, |p| {
+            plugins.get(plugin_id).is_some_and(|p| {
                 p.state == PluginInstanceState::Running
             })
         };
@@ -507,7 +507,7 @@ impl PluginExecutor {
     /// Check if a plugin is running
     pub fn is_running(&self, id: &str) -> bool {
         let plugins = self.running_plugins.lock().unwrap();
-        plugins.get(id).map_or(false, |p| p.state == PluginInstanceState::Running)
+        plugins.get(id).is_some_and(|p| p.state == PluginInstanceState::Running)
     }
 
     /// Get list of running plugins
@@ -583,7 +583,7 @@ impl PluginIpc {
         let to = message.to.clone();
         self.message_queue
             .entry(to)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(message);
         Ok(())
     }

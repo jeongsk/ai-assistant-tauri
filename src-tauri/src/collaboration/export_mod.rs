@@ -1,5 +1,7 @@
 // Export and Import functionality
 
+#![allow(dead_code)]
+
 use crate::collaboration::{ExportFormat, ExportOptions};
 use serde::{Deserialize, Serialize};
 
@@ -85,7 +87,7 @@ fn export_to_markdown(
             output.push_str(&format!("{}\n\n{}\n\n---\n\n", role, msg.content));
         }
 
-        output.push_str("\n");
+        output.push('\n');
     }
 
     Ok(output.into_bytes())
