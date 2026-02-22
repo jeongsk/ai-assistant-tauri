@@ -4,7 +4,6 @@
 
 pub mod operations;
 
-use crate::integration::git::operations::GitOperations;
 use serde::{Deserialize, Serialize};
 
 /// Git repository configuration

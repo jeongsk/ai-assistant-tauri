@@ -6,10 +6,12 @@ use crate::plugins::{
     api::{handle_request, PluginRequest},
     sandbox::{PluginSandbox, SandboxManager},
     runtime::{WasmRuntime, WasmRuntimeConfig},
-    wasi_host::{WasiHost, create_wasi_context_with_dir},
+    wasi_host::WasiHost,
     monitor::{ResourceMonitor, MetricUpdate},
     PluginContext, PluginManifest, PluginPermission, ResourceLimits,
 };
+#[cfg(feature = "wasm")]
+use crate::plugins::wasi_host::create_wasi_context_with_dir;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -200,12 +202,16 @@ impl PluginExecutor {
         let mut plugins = self.running_plugins.lock().unwrap();
 
         // Get the plugin before removing to access its fields
-        let instance_id = plugins.get_mut(id).and_then(|p| {
+        let instance_id: Option<String> = plugins.get_mut(id).and_then(|p| {
             p.state = PluginInstanceState::Stopping;
             #[cfg(feature = "wasm")]
-            return p.wasm_instance_id.clone();
+            {
+                p.wasm_instance_id.clone()
+            }
             #[cfg(not(feature = "wasm"))]
-            return None;
+            {
+                None
+            }
         });
 
         // Remove from running plugins
